@@ -19,12 +19,15 @@ object WordCount {
     // 每个单词记一次，因为单词不区分大小写，这里用lambda表达式转为小写
     val wordOne: RDD[(String, Int)] = words.map(str => (str.toLowerCase(), 1))
     // reduce
-    val wordCount: RDD[(String, Int)] = wordOne.reduceByKey(_ + _)
+//    val wordCount: RDD[(String, Int)] = wordOne.reduceByKey(_ + _)
+        val wordCount: RDD[(String, Int)] = wordOne.reduceByKey((a, b) => (a + b))
     // 判断目标文件夹是否存在，存在则删除
-    val target = new File("result")
+    val target: File = new File("result")
     if (target.exists()) {
-      target.delete()
+      println("delete!" + target.getAbsolutePath())
+      deleteDir(target)
     }
+    //保存
     wordCount.saveAsTextFile("result")
     sc.stop()
   }
@@ -38,7 +41,28 @@ object WordCount {
     val config: SparkConf = new SparkConf()
     config.setMaster("local")
     config.setAppName("WordCount")
+    config.set("spark.hadoop.validateOutputSpecs", "false")
     return config
+  }
+
+  /**
+    * 删除文件夹
+    * @param dir
+    */
+  def deleteDir(dir: File): Unit = {
+    if (dir.isFile) {
+      dir.delete()
+    } else {
+      val files: Array[File] = dir.listFiles()
+      if (files == null) {
+        dir.delete()
+      } else {
+        for (i <- 0 to files.length-1) {
+          deleteDir(files(i))
+          dir.delete()
+        }
+      }
+    }
   }
 
 }
