@@ -1,0 +1,1205 @@
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 225–237
+July 5 - 10, 2020. c©2020 Association for Computational Linguistics
+225
+Learning to Ask More: Semi-Autoregressive Sequential Question
+Generation under Dual-Graph Interaction
+Zi Chai, Xiaojun Wan
+Wangxuan Institue of Computer Technology, Peking University
+The MOE Key Laboratory of Computational Linguistics, Peking University
+{chaizi, wanxiaojun}@pku.edu.cn
+Abstract
+Traditional Question Generation (TQG) aims
+to generate a question given an input passage
+and an answer. When there is a sequence of
+answers, we can perform Sequential Question
+Generation (SQG) to produce a series of inter-
+connected questions. Since the frequently oc-
+curred information omission and coreference
+between questions, SQG is rather challenging.
+Prior works regarded SQG as a dialog genera-
+tion task and recurrently produced each ques-
+tion. However, they suffered from problems
+caused by error cascades and could only cap-
+ture limited context dependencies. To this end,
+we generate questions in a semi-autoregressive
+way. Our model divides questions into differ-
+ent groups and generates each group of them
+in parallel. During this process, it builds two
+graphs focusing on information from passages,
+answers respectively and performs dual-graph
+interaction to get information for generation.
+Besides, we design an answer-aware attention
+mechanism and the coarse-to-fine generation
+scenario. Experiments on our new dataset con-
+taining 81.9K questions show that our model
+substantially outperforms prior works.
+1 Introduction
+Question Generation (QG) aims to teach machines
+to ask human-like questions from a range of inputs
+such as natural language texts (Du et al., 2017),
+images (Mostafazadeh et al., 2016) and knowledge
+bases (Serban et al., 2016). In recent years, QG has
+received increasing attention due to its wide appli-
+cations. Asking questions in dialog systems can en-
+hance the interactiveness and persistence of human-
+machine interactions (Wang et al., 2018). QG bene-
+fits Question Answering (QA) models through data
+augmentation (Duan et al., 2017) and joint learn-
+ing (Sun et al., 2019). It also plays an important
+role in education (Heilman and Smith, 2010) and
+clinical (Weizenbaum et al., 1966) systems.
+Traditional Question Generation (TQG) is de-
+fined as the reverse task of QA, i.e., a passage and
+an answer (often a certain span from the passage)
+are provided as inputs, and the output is a ques-
+tion grounded in the input passage targeting on the
+given answer. When there is a sequence of answers,
+we can perform Sequential Question Generation
+(SQG) to produce a series of interconnected ques-
+tions. Table 1 shows an example comparing the two
+tasks. Intuitively, questions in SQG are much more
+concise and we can regard them with given answers
+as QA-style conversations. Since it is more natural
+for human beings to test knowledge or seek infor-
+mation through coherent questions (Reddy et al.,
+2019), SQG has wide applications, e.g., enabling
+virtual assistants to ask questions based on previous
+discussions to get better user experiences.
+SQG is a challenging task in two aspects. First,
+information omissions between questions lead to
+complex context dependencies. Second, there are
+frequently occurred coreference between questions.
+Prior works regarded SQG as a dialog generation
+task (namely conversational QG) where questions
+are generated autoregressively (recurrently), i.e.,
+a new question is produced based on previous out-
+puts. Although many powerful dialog generation
+models can be adopted to address the challenges
+mentioned above, there are two major obstacles.
+First, these models suffer from problems caused by
+error cascades. Empirical results from experiments
+reveal that the later generated questions tend to be-
+come shorter with lower quality, especially becom-
+ing more irrelevant to given answers, e.g., “Why?”,
+“What else?”. Second, models recurrently gener-
+ating each question struggle to capture complex
+context dependencies, e.g., long-distance corefer-
+ence. Essentially, SQG is rather different from
+dialog generation since all answers are given in
+advance and they act as strict semantic constraints
+during text generation.
+226
+(1) A small boy named [John]1 was at the park one day.
+(2) He was [swinging]2 [on the swings]3 and [his friend]4 named [Tim]5 [played on the slide]6.
+(3) John wanted to play on the slide now.
+(4) He asked Tim [if he could play on the slide]7.
+(5) Tim said [no]8, and he cried.
+Turn TQG SQG Answer
+1 Who was at the park? Who was at the park? John
+2 What was John doing at the park? What was he doing there? swinging
+3 Where was John swinging? On what? on the wings
+4 Who was with John at the park? Who was he with? his friend
+5 What is the name of John’s friend? Named? Tim
+6 What was Tim doing? What was he doing? played on the side
+7 What did John asked Tim? What did John asked him? if he could play on the slide
+8 What did Tim say to John? What did he say? no
+Table 1: Comparison of Traditional Question Generation (TQG) and Sequential Question Generation (SQG). The
+given passage contains five sentences, and we mark the given answers in the passage as blue.
+To deal with these problems, we perform SQG in
+a semi-autoregressive way. More specifically, we
+divide target questions into different groups (ques-
+tions in the same group are closely-related) and
+generate all groups in parallel. Especially, our sce-
+nario becomes non-autoregressive if each group
+only contains a single question. Since we eliminate
+the recurrent dependencies between questions in
+different groups, the generation process is much
+faster and our model can better deal with the prob-
+lems caused by error cascades. To get informa-
+tion for the generation process, we perform dual-
+graph interaction where a passage-info graph and
+an answer-info graph are constructed and itera-
+tively updated with each other. The passage-info
+graph is used for better capturing context depen-
+dencies, and the answer-info graph is used to make
+generated questions more relevant to given answers
+with the help of our answer-aware attention mech-
+anism. Besides, a coarse-to-fine text generation
+scenario is adopted for the coreference resolution
+between questions.
+Prior works performed SQG on CoQA (Reddy
+et al., 2019), a high-quality dataset for conversa-
+tional QA. As will be further illustrated, a number
+of data in CoQA are not suitable for SQG. Some
+researchers (Gao et al., 2019) directly discarded
+these data, but the remaining questions may be-
+come incoherent, e.g., the antecedent words for
+many pronouns are unclear. To this end, we build
+a new dataset from CoQA containing 81.9K rela-
+beled questions. Above all, the main contributions
+of our work are:
+• We build a new dataset containing 7.2K pas-
+sages and 81.9K questions from CoQA. It is
+the first dataset specially built for SQG as far
+as we know.
+• We perform semi-autoregressive SQG under
+dual-graph interaction. This is the first time
+that SQG is not regarded as a dialog genera-
+tion task. We also propose an answer-aware
+attention mechanism and a coarse-to-fine gen-
+eration scenario for better performance.
+• We use extensive experiments to show that our
+model outperforms previous work by a sub-
+stantial margin. Further analysis illustrated
+the impact of different components.
+Dataset for this paper is available at https://
+github.com/ChaiZ-pku/Sequential-QG.
+2 Related Work
+2.1 Traditional Question Generation
+TQG was traditionally tackled by rule-based meth-
+ods (Lindberg et al., 2013; Mazidi and Nielsen,
+2014; Hussein et al., 2014; Labutov et al., 2015),
+e.g., filling handcrafted templates under certain
+transformation rules. With the rise of data-driven
+learning approaches, neural networks (NN) have
+gradually taken the mainstream. Du et al. (2017)
+pioneered NN-based QG by adopting the Seq2seq
+architecture (Sutskever et al., 2014). Many ideas
+were proposed since then to make it more power-
+ful, including answer position features (Zhou et al.,
+2017), specialized pointer mechanism (Zhao et al.,
+2018), self-attention (Scialom et al., 2019), answer
+separation (Kim et al., 2019), etc. In addition, en-
+hancing the Seq2seq model into more complicated
+structures using variational inference, adversarial
+training and reinforcement learning (Yao et al.,
+2018; Kumar et al., 2019) have also gained much
+attention. There are also some works performing
+TQG under certain constraints, e.g., controlling the
+227
+topic (Hu et al., 2018) and difficulty (Gao et al.,
+2018) of questions. Besides, combining QG with
+QA (Wang et al., 2017; Tang et al., 2017; Sun et al.,
+2019) is also focused by many researchers.
+2.2 Sequential Question Generation
+As human beings tend to use coherent questions
+for knowledge testing or information seeking, SQG
+plays an important role in many applications. Prior
+works regarded SQG as a dialog generation task
+(namely conversational QA). Pan et al. (2019) pre-
+trained a model performing dialog generation, and
+then fine-tuned its parameters by reinforcement
+learning to make generated questions relevant to
+given answers. Gao et al. (2019) iteratively gener-
+ated questions from previous outputs and leveraged
+off-the-shelf coreference resolution models to intro-
+duce a coreference loss. Besides, additional human
+annotations were performed on sentences from in-
+put passages for conversation flow modeling.
+Since SQG is essentially different from dialog
+generation, we discard its dialog view and propose
+the first semi-autoregressive SQG model. Com-
+pared with using the additional human annotation
+in Gao et al. (2019), our dual-graph interaction
+deals with context dependencies automatically. Be-
+sides, our answer-aware attention mechanism is
+much simpler than the fine-tuning process in Pan
+et al. (2019) to make outputs more answer-relevant.
+3 Dataset
+As the reverse task of QA, QG is often performed
+on existing QA datasets, e.g., SQuAD (Rajpurkar
+et al., 2016), NewsQA (Trischler et al., 2016), etc.
+However, questions are independent in most QA
+datasets, making TQG the only choice. In recent
+years, the appearance of large-scale conversational
+QA datasets like CoQA (Reddy et al., 2019) and
+QuAC (Choi et al., 2018) makes it possible to train
+data-driven SQG models, and the CoQA dataset
+was widely adopted by prior works. Since the test
+set of CoQA is not released to the public, its train-
+ing set (7.2K passages with 108.6K questions) was
+split into new training and validation set, and its
+validation set (0.5K passages with 8.0K questions)
+was used as the new test set.
+Different from traditional QA datasets where
+the answers are certain spans from given passages,
+answers in CoQA are free-form text1 with cor-
+1Only 66.8% of the answers overlap with the passage after
+ignoring punctuations and case mismatches.
+responding evidence highlighted in the passage.
+This brings a big trouble for QG. As an example,
+consider the yes/no questions counting for 19.8%
+among all questions. Given the answer “yes” and a
+corresponding evidence “...the group first met on
+July 5 , 1967 on the campus of the Ohio state uni-
+versity...”, there are many potential outputs, e.g.,
+“Did the group first met in July?”, “Was the group
+first met in Ohio state?”. When considering the
+context formed by previous questions, the potential
+outputs become even more (the original question in
+CoQA is “Was it founded the same year?”). When
+there are too many potential outputs with signifi-
+cantly different semantic meanings, training a con-
+verged QG model becomes extremely difficult. For
+this reason, Gao et al. (2019) directly discarded
+questions that cannot be answered by spans from
+passages. However, the remaining questions can be-
+come incoherent, e.g., antecedent words for many
+pronouns become unclear.
+To this end, we build a new dataset from CoQA
+by preserving all 7.7K passages and rewriting all
+questions and answers. More specifically, we first
+discarded questions that are unsuitable for SQG. To
+do so, three annotators were hired to vote for the
+preservation/deletion of each question. A question
+is preserved if and only if it can be answered by
+a certain span from the input passage2. As a re-
+sult, most deleted questions were yes/no questions
+and unanswerable questions. Besides, the kappa
+score between results given by different annotators
+was 0.83, indicating that there was a strong inter-
+agreement between annotators. For the remaining
+QA-pairs, we preserved their original order and
+replaced all answers by spans from input passages.
+After that, we rewrote all questions to make them
+coherent. To avoid over-editing, annotators were
+asked to modify as little as possible. It turned out
+that in most cases, they only needed to deal with
+coreference since the prototype of pronouns were
+no longer existed. To further guarantee the annota-
+tion quality, we hired another project manager who
+daily examined 10% of the annotations from each
+annotator and provided feedbacks. The annotation
+was considered valid only when the accuracy of
+examined results surpasses 95%. Our annotation
+process took 2 months, and we finally got a dataset
+containing 7.7K passage with 81.9K QA-pairs.
+2Using certain spans from input passages (instead of free-
+formed text) as answers is a conversion in QG. In this way, the
+number of potential output questions is greatly reduced.
+228
+Figure 1: Architecture of our model. The example is corresponding with Table 1
+4 Model
+In this section, we formalize the SQG task and in-
+troduce our model in details. As shown in Figure 1,
+the model first builds a passage-info graph and an
+answer-info graph by its passage-info encoder and
+answer-info encoder respectively. After that, it per-
+forms dual-graph interaction to get representations
+for the decoder. Finally, different groups of ques-
+tions are generated in parallel under a coarse-to-fine
+scenario. Both encoders and decoder take the form
+of Transformer architecture (Vaswani et al., 2017).
+4.1 Problem Formalization
+In SQG, we input a passage composed by n sen-
+tences P = {Si}ni=1 and a sequence of l answers
+{Ai}li=1, each Ai is a certain span of P . The tar-
+get output is a series of questions {Qi}li=1, where
+Qi can be answered by Ai according to the input
+passage P and previous QA-pairs.
+As mentioned above, we perform SQG in an
+semi-autoregressive way, i.e., target questions are
+divided into into different groups. Ideally, ques-
+tions in the same group are expected to be closely-
+related, while questions in different groups should
+be as independent as possible. Our model takes a
+simple but effective unsupervised question cluster-
+ing method. The intuition is: if two answers come
+from the same sentence, the two corresponding
+questions are likely to be closely-related. More
+specifically, if the k-th sentence Sk contains p
+answers from {Ai}li=1, we cluster them into an
+answer-group Gansk = {Aj1 , Aj2 , ..., Ajp} where
+j1 < j2 < ... < jp are continuous indexes from
+{1, 2, ..., l}. By replacing each answer in Gansk
+with its corresponding question, we get a question-
+group Gquesk = {Qj1 , Qj2 , ..., Qjp}, and we fur-
+ther define a corresponding target-output Tk as
+“Qj1 [sep]Qj2 [sep] ... [sep]Qjp” where “[sep]” is
+a special token. In Table 1, there are four target
+outputs T1, T2, T4, T5 (no T3 since the third sen-
+tence in Table 1 do not contain any answer), T2 is
+“What was he doing there? [sep] On What? [sep]
+... [sep] What was Tim doing?” corresponding
+with the second sentence, and T5 is “What did he
+say?” corresponding with the last sentence. Sup-
+posing there are m answer- and question-groups,
+then our model generates all the m target-outputs
+in parallel, i.e., all questions are generated in a
+semi-autoregressive way.
+4.2 Passage-Info encoder
+As shown in Figure 1, our passage-info encoder
+maps input sentences {Si}ni=1 into their sentence
+representations {si}ni=1 where every si ∈ R2ds .
+We regard each sentence as a sequence of words
+and replace each word by its pre-trained word em-
+beddings (Mikolov et al., 2013) which is a dense
+vector. After that, the sequence of word embed-
+dings is sent to a Transformer-encoder that outputs
+a corresponding sequence of vectors. By averag-
+ing these vectors, we get the local representation
+slocali ∈ Rds of Si.
+After we get the local representations of all sen-
+tences {Si}ni=1 in passage P , another Transformer-
+encoder is adopted to map the sequence {slocali }ni=1
+into {sglobali }ni=1, where s
+global
+i ∈ Rds is called the
+229
+Figure 2: Illustration of answer embeddings and an
+answer-attention head for the forth sentence in Table 1.
+global representation for Si. In other words, the
+passage-info encoder takes a hiarachical structure.
+We expect the local and global representations cap-
+ture intra- and inter- sentence context dependencies
+respectively, and the final representation for Si is
+si = [s
+local
+i ; s
+global
+i ] ∈ R2ds .
+4.3 Answer-Info Encoder
+As described in Section 4.1, the input answers are
+split into m answer-groups. For Gansk correspond-
+ing with the k-th sentence of the input passage, we
+define {Gansk , Sk} as a “rationale” Rk, and further
+obtain its representation rk ∈ R2dr by our answer-
+info encoder, which is based on a Transformer-
+encoder regarding sentence Sk as its input.
+To further consider information from Gansk , two
+more components are added into the answer-info
+encoder, as shown in Figure 2. First, we adopt the
+answer-tag features. For each word wi in sentence
+Sk, the embedding layer computes [xwi ;x
+a
+i ] ∈ Rdr
+as its final embedding, where xwi is the pre-trained
+word embedding and xai contains answer-tag fea-
+tures. More specifically, we give wi a label from
+{O, B, I} if it is “outside”, “the beginning of”,
+“inside of” any answer from Gansk , and use a vec-
+tor corresponding with this label as xai . Second,
+we design the answer-aware attention mechanism.
+In the multi-head attention layer, there are not
+only lh vanilla “self-attention heads”, but also la
+“answer-aware heads” for each answer in Gansk .
+In an answer-aware head corresponding with an-
+swer A, words not belonging to A are masked out
+during the attention mechanism. The output of
+the Transformer-encoder is a sequence of vectors
+Henck = {henck } (henck ∈ Rdr ) corresponding with
+the input word sequence from Sk.
+After getting Henck , we further send the se-
+quence of vectors to a bi-directional GRU net-
+work (Chung et al., 2014) and take its last hidden
+state as the final rationale embedding rk ∈ R2dr .
+4.4 Graph Construction
+In our SQG task, the input passage contain n sen-
+tences, which can be represented by {si}ni=1 ∈
+R2ds leveraging the passage-info encoder. Among
+all input sentences, only m of them contain certain
+answers (m ≤ n), and we further define m ratio-
+nales based on these sentences, {GansF (j), SF (j)}
+m
+j=1,
+where the j-th rationale (j ∈ {1, 2, ...,m}) cor-
+responds with the F (j)-th sentence of the input
+passage (F (j) ∈ {1, 2, ..., n}). For the example in
+Table 1, n = 5,m = 4, F (j) maps {1, 2, 3, 4} into
+{1, 2, 4, 5} respectively. Using the answer-info en-
+coder, we can get representations {rF (j)}mj=1 ∈
+R2ds for all rationales.
+We further build a passage-info graph V and an
+answer-info graph U based on these representa-
+tions. For the rationale corresponding with the k-th
+sentence of the input passage, we add node uk, vk
+in graph U ,V respectively. For the example in Ta-
+ble 1, U is compused by {u1, u2, u4, u5} and V is
+compused by {v1, v2, v4, v5}, as shown in Figure 1.
+The initial representation for uk is computed by:
+u
+(0)
+k = ReLU(Wu[rk; ek] + bu) ∈ R
+dg (1)
+where rk ∈ R2dr is the rationale representation,
+ek ∈ Rde is the embedding of index k, and Wu ∈
+R(de+2dr)×dg , bu ∈ Rdg are trainable parameters.
+And the initial representation for vk is:
+v
+(0)
+k = ReLU(Wv[sk; ek] + bv) ∈ R
+dg (2)
+where sk ∈ R2ds is the sentence representation and
+Wv ∈ R(de+2ds)×dg , bv ∈ Rdg are parameters.
+After adding these points, there arem nodes in U
+and V respectively. For ui, uj ∈ U corresponding
+with the i-th, j-th input sentences respectively, we
+add an edge between them if |i − j| < δ (δ is a
+hyper-parameter). Similarly, we add edges into V
+and the two graphs are isomorphic.
+4.5 Dual-Graph Interaction
+In our answer-info graph U , node representations
+contain information focused on input answers. In
+the passage-info graph V , node representations cap-
+ture inter- and intra-sentence context dependencies.
+As mentioned above, a good question should be
+230
+answer-relevant as well as capturing complex con-
+text dependencies. So we should combine infor-
+mation in both U and V . Our dual-graph interac-
+tion is a process where U and V iteratively update
+node representations with each other. At time step
+t, representations u(t−1)i ,v
+(t−1)
+i are updated into
+u
+(t)
+i ,v
+(t)
+i respectively under three steps.
+First, we introduce the information transfer step.
+Taking U as an example. Each u(t−1)i receives a
+(t)
+i
+from its neighbors (two nodes are neighbors if there
+is an edge between them) by:
+a
+(t)
+i =
+∑
+uj∈N (ui)
+Wij u
+(t−1)
+j + bij (3)
+whereN (ui) is composed by all neighbors of node
+ui and Wij ∈ Rdg×dg , bij ∈ Rdg are parameters
+controlling the information transfer. For ui, uj and
+ui′ , uj′ whose |i− j| = |i′ − j′|, we use the same
+W and b. In other words, we can first create a
+sequence of matrices {W1,W2, ...} ∈ Rdg×dg and
+vectors {b1, b2, ...} ∈ Rdg , and then use |i − j|
+as the index to retrieve the corresponding Wij , bij .
+For graph V , we similarly compute
+ã
+(t)
+i =
+∑
+vj∈N (vi)
+W̃ij v
+(t−1)
+j + b̃ij (4)
+In the second step, we compute multiple gates.
+For each u(t−1)i in U , we compute an “update gate”
+y
+(t)
+i and a “reset gate” z
+(t)
+i by:
+y
+(t)
+i = σ(Wy[a
+(t)
+i ;u
+(t−1)
+i ])
+z
+(t)
+i = σ(Wz[a
+(t)
+i ;u
+(t−1)
+i ])
+(5)
+where Wy,Wz ∈ R2dg×dg are paramenters. Simi-
+larly, for each v(t−1)i in V we compute:
+ỹ
+(t)
+i = σ(W̃y[ã
+(t)
+i ;v
+(t−1)
+i ])
+z̃
+(t)
+i = σ(W̃z[ã
+(t)
+i ;v
+(t−1)
+i ])
+(6)
+Finally, we perform the information interaction,
+where each graph updates its node representations
+under the control of gates computed by the other
+graph. More specifically, node representations are
+updated by:
+u
+(t)
+i = z̃
+(t)
+i  u
+(t−1)
+i + (1− z̃
+(t)
+i ) 
+tanh(Wa[a
+(t)
+i ; ỹ
+(t)
+i  u
+(t−1)
+i ])
+v
+(t)
+i =z
+(t)
+i  v
+(t−1)
+i + (1− z
+(t)
+i ) 
+tanh(W̃a[ã
+(t)
+i ;y
+(t)
+i  v
+(t−1)
+i ])
+(7)
+The idea of using gates computed by the other
+graph to update node representations in each graph
+enables the information in input passage and an-
+swers interact more frequently, both of which act
+as strong constraints to the output questions.
+By iteratively performing the three steps for T
+times, we get the final representations u(T )i and
+v
+(T )
+i for ui ∈ U and vi ∈ V .
+4.6 Decoder
+For the k-th input sentence Sk containing certain
+answers, our decoder generates the corresponding
+target-output Tk. As mentioned above, the genera-
+tion process of all target-outputs are independent.
+The decoder is based on the Transformer-decoder
+containing a (masked) multi-head self-attention
+layer, a multi-head encoder-attention layer, a feed-
+forward projection layer and the softmax layer.
+To compute keys and values for the multi-head
+encoder-attention layer, it leverages the outputs
+from our answer-info encoder, i.e., it uses Henck de-
+scribed in Section 4.3 to generate Tk corresponding
+with the k-th sentence.
+To generate coherent questions, we need to cap-
+ture the context dependencies between input an-
+swers and passages. To this end, both u(T )k and
+v
+(T )
+k , which comes from the dual-graph interaction
+process, are used as additional inputs for generat-
+ing Tk. First, they are concatenated with the output
+of each head from both (masked) multi-head self-
+attention layer and multi-head encoder-attention
+layer before sending to the next layer. Second, they
+are concatenated with inputs of the feed-forward
+projection layer. The two representations are also
+expected to make generated questions more rele-
+vant to given inputs.
+4.7 Coarse-To-Fine Generation
+Since the semi-autoregressive generation scenario
+makes it more challenging to deal with corefer-
+ences between questions (especially questions in
+different groups), we perform question generation
+in a coarse-to-fine manner. The decoder only needs
+to generate “coarse questions” where all pronouns
+are replaced by a placeholder “[p]”. To get final
+results, we use an additional pre-trained corefer-
+ence resolution model to fill pronouns into different
+placeholders. To make a fair comparison, we use
+the coreference resolution model (Clark and Man-
+ning, 2016) adopted by prior works CoreNQG (Du
+and Cardie, 2018) and CorefNet (Gao et al., 2019).
+231
+Model BLEU1 BLEU2 BLEU3 ROUGE METEOR Length
+Seq2seq (Du et al., 2017) 28.72 10.16 6.30 31.75 13.10 5.78
+CopyNet (See et al., 2017) 29.40 12.14 6.53 33.71 14.20 5.77
+CoreNQG (Du and Cardie, 2018) 33.84 14.69 8.72 34.38 14.05 6.08
+VHRED (Serban et al., 2017) 30.51 11.95 6.94 31.93 12.42 4.83
+HRAN (Xing et al., 2018) 30.18 12.53 7.65 35.06 12.95 5.02
+ReDR (Pan et al., 2019) 30.84 15.17 9.81 35.58 15.41 5.58
+CorefNet (Gao et al., 2019) 32.72 16.01 10.97 37.48 16.09 5.96
+Ours 35.70 19.64 12.06 38.15 17.26 6.03
+Table 2: Experimental results. In each column, we bold / underline the best performance over all / baseline methods,
+respectively. Under the evaluation of BLEU, ROUGE-L and METEOR, our model differs from others (except the
+METEOR score of CorefNet) significantly based on the one-side paired t-test with p < 0.05.
+5 Experiments
+In this section, we first introduce the three kinds of
+baselines. After that, we compare and analyse the
+results of different models under both automatic
+and human evaluation metrics.
+5.1 Baselines
+We compared our model with seven baselines that
+can be divided into three groups. First, we used
+three TQG models: the Seq2seq (Du et al., 2017)
+model which pioneered NN-based QG, the Copy-
+Net (See et al., 2017) model that introduced pointer
+mechanism, and CoreNQG (Du and Cardie, 2018)
+which used hybrid features (word, answer and
+coreference embeddings) for encoder and adopted
+copy mechanism for decoder. Second, since prior
+works regarded SQG as a conversation generation
+task, we directly used two powerful multi-turn dia-
+log systems: the latent variable hierarchical recur-
+rent encoder-decoder architecture VHRED (Serban
+et al., 2017), and the hierarchical recurrent atten-
+tion architecture HRAN (Xing et al., 2018). Third,
+we used prior works mentioned above. For Pan
+et al. (2019), we adopted the ReDR model which
+had the best performance. For Gao et al. (2019),
+we used the CorefNet model. Although a CFNet in
+this paper got better results, it required additional
+human annotations denoting the relationship be-
+tween input sentences and target questions. So it is
+unfair to compare CFNet with other methods.
+It is worth mentioning that when generating
+questions using the second and third groups of base-
+lines, only previously generated outputs were
+used as dialog history, i.e., the gold standard ques-
+tions are remain unknown (in some prior works,
+they were directly used as dialog history, which we
+think is inappropriate in practice).
+SQuAD CoQA Ours
+Passage 117 271 271
+Question 10.1 5.5 6.6
+Answer 3.2 2.7 3.2
+Table 3: Average number of words in passage, question
+and answer in different datasets.
+5.2 Automatic Evaluation Metrics
+Following the conventions, we used BLEU (Pa-
+pineni et al., 2002), ROUGE-L (Lin, 2004) and
+METEOR (Lavie and Agarwal, 2007) as automatic
+evaluation metrics. We also computed the average
+word-number of generated questions. As shown
+in Table 2, our semi-autoregressive model outper-
+formed other methods substantially.
+When we focus on the second and third groups of
+baselines regarding SQG as multi-turn dialog gen-
+eration tasks, we can find that models from the third
+group are more powerful since they make better use
+of information from input passages. Besides, mod-
+els from the second group tend to generate shortest
+questions. Finally, similar to the problem that di-
+alog systems often generate dull and responses,
+these models also suffer from producing general
+but meaningless questions like “What?”, “How?”,
+“And else?”.
+When we compare the first and third groups of
+baselines (which are all QG models), it is not sur-
+prising that SQG models show more advantages
+than TQG models, as they take the relationships
+between questions into consideration. Besides,
+CorefNet gets better performance among all base-
+lines, especially ReDR. This indicates that com-
+paring with implicitly performing reinforcement
+learning through QA models, explicitly using tar-
+get answers as inputs can be more effective.
+232
+CoreNQG CorefNet Ours
+Fluency 2.36 2.51 2.44
+Coherence 1.53 2.04 2.17
+Coreference 1.15 1.56 1.54
+Answerability 1.12 1.18 1.45
+Relevance 1.47 1.24 1.62
+Table 4: Human evaluation results. Scores of each met-
+ric ranges between 1 to 3 and larger scores are better.
+Note that if we directly compare the performance
+between SQG task and TQG task under the same
+model (e.g., the Seq2seq model), evaluation scores
+for TQG tasks are much higher, which is not sur-
+prising since SQG is harder than TQG dealing with
+dependencies between questions. Another fact lies
+in the computation of automatic evaluation metrics.
+As shown in Table 2, questions in SQG datasets
+are much shorter than TQG. Since our automatic
+evaluation metrics are based on n-gram overlaps
+between generated and gold standard questions, the
+scores significantly go down with the growth of n
+(for this reason, the BLEU4 scores are not listed
+in Table 2). This also illustrates the importance of
+performing human evaluation.
+5.3 Human Evaluation
+It is generally acknowledged that automatic evalua-
+tion metrics are far from enough for SQG. So we
+perform human evaluation in five aspects. Fluency
+measures if a question is grammatically correct and
+is fluent to read. Coherence measures if a ques-
+tion is coherent with previous ones. Coreference
+measures if a question uses correct pronouns. An-
+swerability measures if a question is targeting on
+the given answer. Relevance measures if a ques-
+tion is grounded in the given passage. Since per-
+forming human evaluation is rather expensive and
+time-consuming, we picked up the best TQG model
+(CoreNQG), SQG model (CorefNet) to compare
+with our model. We randomly selected 20 passages
+from the test set with 207 given answers and asked
+10 native speakers to evaluate the outputs of each
+model independently. Under each aspect, reviewers
+are asked to choose a score from {1, 2, 3}, where
+3 indicates the best quality.
+The average scores for each evaluation metric
+are shown in Table 4. We can find that our model
+gets the best or competitive performance in each
+metric. When it comes to fluency, all models get
+high performance, and the CorefNet that outputs
+BLEU3 ROUGE METEOR
+No interact 11.35 37.31 17.05
+Uni-graph 9.86 36.44 15.87
+Uni-heads 10.33 37.48 16.24
+No co2fine 11.75 37.92 17.17
+Non-auto 7.79 33.62 14.83
+Ours 12.06 38.15 17.26
+Table 5: Results for ablation tests.
+shortest questions gets the best score. As for coher-
+ence, CoreNQG gets poor results since it generates
+questions independently. When it comes to corefer-
+ence, our model only slightly lower than CorefNet,
+which added direct supervision to attention weights
+by a coreference resolution model. Finally, our
+model gets the best performance on both answer-
+abity and relevance. However, it is worth noticing
+that all models get rather poor performances under
+these two aspects, indicating that making a concise
+question meaningful (i.e., targeting on given an-
+swers) with more information from input passage
+(i.e., performing proper information elimination)
+is a major challenge in SQG. Besides, as pointed
+out by Table 3, questions in our SQG dataset are
+significantly shorter compared with TQG dataset,
+making subtle errors much easier to be noticed.
+6 Analysis
+6.1 Ablation Test
+In this section, we perform ablation test to verify
+the influence of different components in our model.
+First, we modify Equation 7 into
+u
+(t)
+i = z
+(t)
+i  u
+(t−1)
+i + (1− z
+(t)
+i ) 
+tanh(Wa[a
+(t)
+i ;y
+(t)
+i  u
+(t−1)
+i ])
+v
+(t)
+i =z̃
+(t)
+i  v
+(t−1)
+i + (1− z̃i
+(t)) 
+tanh(W̃a[ã
+(t)
+i ; ỹ
+(t)
+i  v
+(t−1)
+i ])
+(8)
+to get the no interact model, i.e., two graphs are in-
+dependently updated without any interaction. Sec-
+ond, we build a uni-graph model by removing
+the passage-info encoder (the remaining rationale
+graph is updated similarly to Li et al. (2015)).
+Third, we discard the attention-aware heads in the
+rationale encoder to get a uni-heads model. Then,
+we build the no co2fine model without the coarse-
+to-fine generation scenario. Finally, we build a
+non-auto model that performs SQG in an non-
+autoregressive way, i.e., each question is generated
+in parallel.
+233
+Peter was a very sad puppy. He had been inside of the pet store for a very long time. In fact, he had been there for
+[three months]1! Peter had seen many other puppies find a person; he began to wonder why he could not get one.
+He thought that [maybe his fur was not pretty enough or maybe his bark was not loud enough]2. He tried and tried
+to please every person who came to the store, but they all picked smaller puppies. However, one day all of this
+changed. [Sammie]3 came into the store looking for [a golden puppy]4. She wanted a puppy she could snuggle
+with. It so happened that Peter was very sad and tired that day. Sammie came to hold him. Peter wanted to show off
+[his bark]5, but he was [too tired]6. He [fell right to sleep]7. Sammie loved him at once and loved holding him in her
+arms. Sammie took [Peter]8 home that day, and they made lots of fun memories.
+Turn Gold Standard CorefNet Ours
+1 How long was Peter at pet store? How long he had been there? How long was Peter there?
+2 Why couldn’t he get someone? What his fur was? What did he thought?
+3 Who came into the store? Who came into the store? Who came into the store?
+4 What for? What was Sammie looking? Who was she looking for?
+5 What did peter wanted to show off? What Peter wanted show off? What he show off?
+6 Why not? Why he wanted? What was he?
+7 What did he do with her? And else? What did he do?
+8 Who did she take? Who was Sammie took? What Sammie took that day?
+Table 6: Example outputs from different models. We mark the given answers in the passage as blue.
+As shown in Table 5, each component in our
+model plays an important part. Results for the
+no interact model indicate that compared with in-
+dependently updating the passage-info graph and
+answer-info graph, making these information more
+interacted by our dual-graph interaction scenario
+is more powerful. Not surprisingly, the uni-graph
+model removing the passage encoder (i.e., less fo-
+cusing on context dependencies between sentences
+from input passage), and the uni-heads model dis-
+carding our answer-aware attention mechanism
+(i.e., less focusing on given answers) get significant
+worse performance compared with our full model.
+Besides, our coarse-to-fine scenario helps to bet-
+ter deal with the dependencies between questions
+since there are widespread coreferences. Finally,
+although the architecture of non-auto model is a
+special case of our model where each group only
+contains a single question, the performance drops
+significantly, indicating the importance of using
+semi-autoregressive generation. However, the dual-
+graph interaction still makes its performance better
+than the Seq2seq and CopyNet in Table 2.
+6.2 Running Examples
+In Table 6, we present some generated examples
+comparing our model and the strongest baseline
+CorefNet. On the one hand, our model performs
+better than CorefNet, especially that the output
+questions are more targeting on given answers (turn
+2, 6, 7). It also correctly deals with coreferences
+(e.g., distinguishing “Peter” and “Sammie”). On
+the other hand, the generated questions have poor
+quality when gold standard questions involve more
+reasoning (turn 2, 6). Besides, the gold standard
+questions are more concise as well (turn 4, 6).
+7 Conclusion
+In this paper, we focus on SQG which is an
+important yet challenging task. Different from
+prior works regarding SQG as a dialog genera-
+tion task, we propose the first semi-autoregressive
+SQG model, which divides questions into differ-
+ent groups and further generates each group of
+closely-related questions in parallel. During this
+process, we first build a passage-info graph, an
+answer-info graph, and then perform dual-graph
+interaction to get representations capturing the con-
+text dependencies between passages and questions.
+These representations are further used during our
+coarse-to-fine generation process. To perform ex-
+periments, we analyze the limitation of existing
+datasets and create the first dataset specially used
+for SQG containing 81.9K questions. Experimental
+results show that our model outperforms previous
+works by a substantial margin.
+For future works, the major challenge is gen-
+erating more meaningful, informative but concise
+questions. Besides, more powerful question cluster-
+ing and coarse-to-fine generation scenarios are also
+worth exploration. Finally, performing SQG on
+other types of inputs, e.g., images and knowledge
+graphs, is an interesting topic.
+Acknowledgments
+This work was supported by National Natural Sci-
+ence Foundation of China (61772036) and Key
+Laboratory of Science, Technology and Standard in
+Press Industry (Key Laboratory of Intelligent Press
+Media Technology). We thank the anonymous re-
+viewers for their helpful comments. Xiaojun Wan
+is the corresponding author.
+234
+References
+Eunsol Choi, He He, Mohit Iyyer, Mark Yatskar, Wen-
+tau Yih, Yejin Choi, Percy Liang, and Luke Zettle-
+moyer. 2018. Quac: Question answering in context.
+arXiv preprint arXiv:1808.07036.
+Junyoung Chung, Caglar Gulcehre, KyungHyun Cho,
+and Yoshua Bengio. 2014. Empirical evaluation of
+gated recurrent neural networks on sequence model-
+ing. arXiv preprint arXiv:1412.3555.
+Kevin Clark and Christopher D Manning. 2016. Deep
+reinforcement learning for mention-ranking corefer-
+ence models. arXiv preprint arXiv:1609.08667.
+Xinya Du and Claire Cardie. 2018. Harvest-
+ing paragraph-level question-answer pairs from
+wikipedia. arXiv preprint arXiv:1805.05942.
+Xinya Du, Junru Shao, and Claire Cardie. 2017. Learn-
+ing to ask: Neural question generation for reading
+comprehension. arXiv preprint arXiv:1705.00106.
+Nan Duan, Duyu Tang, Peng Chen, and Ming Zhou.
+2017. Question generation for question answering.
+In Proceedings of the 2017 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+866–874.
+Yifan Gao, Piji Li, Irwin King, and Michael R Lyu.
+2019. Interconnected question generation with
+coreference alignment and conversation flow mod-
+eling. arXiv preprint arXiv:1906.06893.
+Yifan Gao, Jianan Wang, Lidong Bing, Irwin King, and
+Michael R Lyu. 2018. Difficulty controllable ques-
+tion generation for reading comprehension. arXiv
+preprint arXiv:1807.03586.
+Michael Heilman and Noah A Smith. 2010. Good ques-
+tion! statistical ranking for question generation. In
+Human Language Technologies: The 2010 Annual
+Conference of the North American Chapter of the As-
+sociation for Computational Linguistics, pages 609–
+617. Association for Computational Linguistics.
+Wenpeng Hu, Bing Liu, Jinwen Ma, Dongyan Zhao,
+and Rui Yan. 2018. Aspect-based question genera-
+tion.
+Hafedh Hussein, Mohammed Elmogy, and Shawkat
+Guirguis. 2014. Automatic english question gen-
+eration system based on template driven scheme.
+International Journal of Computer Science Issues
+(IJCSI), 11(6):45.
+Yanghoon Kim, Hwanhee Lee, Joongbo Shin, and Ky-
+omin Jung. 2019. Improving neural question gen-
+eration using answer separation. In Proceedings of
+the AAAI Conference on Artificial Intelligence, vol-
+ume 33, pages 6602–6609.
+Vishwajeet Kumar, Ganesh Ramakrishnan, and Yuan-
+Fang Li. 2019. Putting the horse before the cart: A
+generator-evaluator framework for question genera-
+tion from text. In Proceedings of the 23rd Confer-
+ence on Computational Natural Language Learning
+(CoNLL), pages 812–821.
+Igor Labutov, Sumit Basu, and Lucy Vanderwende.
+2015. Deep questions without deep understanding.
+In Proceedings of the 53rd Annual Meeting of the
+Association for Computational Linguistics and the
+7th International Joint Conference on Natural Lan-
+guage Processing (Volume 1: Long Papers), vol-
+ume 1, pages 889–898.
+Alon Lavie and Abhaya Agarwal. 2007. Meteor: An
+automatic metric for mt evaluation with high levels
+of correlation with human judgments. In Proceed-
+ings of the Second Workshop on Statistical Machine
+Translation, pages 228–231. Association for Compu-
+tational Linguistics.
+Yujia Li, Daniel Tarlow, Marc Brockschmidt, and
+Richard Zemel. 2015. Gated graph sequence neural
+networks. arXiv preprint arXiv:1511.05493.
+Chin-Yew Lin. 2004. Rouge: A package for auto-
+matic evaluation of summaries. Text Summarization
+Branches Out.
+David Lindberg, Fred Popowich, John Nesbit, and Phil
+Winne. 2013. Generating natural language ques-
+tions to support learning on-line. In Proceedings of
+the 14th European Workshop on Natural Language
+Generation, pages 105–114.
+Karen Mazidi and Rodney D Nielsen. 2014. Linguistic
+considerations in automatic question generation. In
+Proceedings of the 52nd Annual Meeting of the As-
+sociation for Computational Linguistics (Volume 2:
+Short Papers), volume 2, pages 321–326.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Cor-
+rado, and Jeff Dean. 2013. Distributed representa-
+tions of words and phrases and their compositional-
+ity. In Advances in neural information processing
+systems, pages 3111–3119.
+Nasrin Mostafazadeh, Ishan Misra, Jacob Devlin, Mar-
+garet Mitchell, Xiaodong He, and Lucy Vander-
+wende. 2016. Generating natural questions about an
+image. arXiv preprint arXiv:1603.06059.
+Boyuan Pan, Hao Li, Ziyu Yao, Deng Cai, and Huan
+Sun. 2019. Reinforced dynamic reasoning for con-
+versational question generation. arXiv preprint
+arXiv:1907.12667.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic eval-
+uation of machine translation. In Proceedings of
+the 40th annual meeting on association for compu-
+tational linguistics, pages 311–318. Association for
+Computational Linguistics.
+Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and
+Percy Liang. 2016. Squad: 100,000+ questions
+for machine comprehension of text. arXiv preprint
+arXiv:1606.05250.
+235
+Siva Reddy, Danqi Chen, and Christopher D Manning.
+2019. Coqa: A conversational question answering
+challenge. Transactions of the Association for Com-
+putational Linguistics, 7:249–266.
+Thomas Scialom, Benjamin Piwowarski, and Jacopo
+Staiano. 2019. Self-attention architectures for
+answer-agnostic neural question generation. In Pro-
+ceedings of the 57th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 6027–
+6032.
+Abigail See, Peter J Liu, and Christopher D Man-
+ning. 2017. Get to the point: Summarization
+with pointer-generator networks. arXiv preprint
+arXiv:1704.04368.
+Iulian Vlad Serban, Alberto Garcı́a-Durán, Caglar
+Gulcehre, Sungjin Ahn, Sarath Chandar, Aaron
+Courville, and Yoshua Bengio. 2016. Generating
+factoid questions with recurrent neural networks:
+The 30m factoid question-answer corpus. arXiv
+preprint arXiv:1603.06807.
+Iulian Vlad Serban, Alessandro Sordoni, Ryan Lowe,
+Laurent Charlin, Joelle Pineau, Aaron Courville, and
+Yoshua Bengio. 2017. A hierarchical latent variable
+encoder-decoder model for generating dialogues. In
+Thirty-First AAAI Conference on Artificial Intelli-
+gence.
+Yibo Sun, Duyu Tang, Nan Duan, Shujie Liu, Zhao
+Yan, Ming Zhou, Yuanhua Lv, Wenpeng Yin, Xi-
+aocheng Feng, Bing Qin, et al. 2019. Joint learn-
+ing of question answering and question generation.
+IEEE Transactions on Knowledge and Data Engi-
+neering.
+Ilya Sutskever, Oriol Vinyals, and Quoc V Le. 2014.
+Sequence to sequence learning with neural networks.
+In Advances in neural information processing sys-
+tems, pages 3104–3112.
+Duyu Tang, Nan Duan, Tao Qin, Zhao Yan, and
+Ming Zhou. 2017. Question answering and ques-
+tion generation as dual tasks. arXiv preprint
+arXiv:1706.02027.
+Adam Trischler, Tong Wang, Xingdi Yuan, Justin Har-
+ris, Alessandro Sordoni, Philip Bachman, and Ka-
+heer Suleman. 2016. Newsqa: A machine compre-
+hension dataset. arXiv preprint arXiv:1611.09830.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information pro-
+cessing systems, pages 5998–6008.
+Tong Wang, Xingdi Yuan, and Adam Trischler. 2017.
+A joint model for question answering and question
+generation. arXiv preprint arXiv:1706.01450.
+Yansen Wang, Chenyi Liu, Minlie Huang, and Liqiang
+Nie. 2018. Learning to ask questions in open-
+domain conversational systems with typed decoders.
+Joseph Weizenbaum et al. 1966. Eliza—a computer
+program for the study of natural language communi-
+cation between man and machine. Communications
+of the ACM, 9(1):36–45.
+Chen Xing, Yu Wu, Wei Wu, Yalou Huang, and Ming
+Zhou. 2018. Hierarchical recurrent attention net-
+work for response generation. In Thirty-Second
+AAAI Conference on Artificial Intelligence.
+Kaichun Yao, Libo Zhang, Tiejian Luo, Lili Tao, and
+Yanjun Wu. 2018. Teaching machines to ask ques-
+tions. In IJCAI, pages 4546–4552.
+Yao Zhao, Xiaochuan Ni, Yuanyuan Ding, and Qifa
+Ke. 2018. Paragraph-level neural question genera-
+tion with maxout pointer and gated self-attention net-
+works. In Proceedings of the 2018 Conference on
+Empirical Methods in Natural Language Processing,
+pages 3901–3910.
+Qingyu Zhou, Nan Yang, Furu Wei, Chuanqi Tan,
+Hangbo Bao, and Ming Zhou. 2017. Neural ques-
+tion generation from text: A preliminary study. In
+National CCF Conference on Natural Language
+Processing and Chinese Computing, pages 662–671.
+Springer.
+236
+A Examples of Data Labeling
+In Table 7, we use a typical example to show how
+we relabeled CoQA. As introduced in our paper,
+we first deleted questions that cannot be answered
+by certain span from the passage. In Table 7, we
+deleted QA-pairs in turn 15, 18, 19 since they are
+yes/no questions, turn 3, 16 since the answer “fe-
+male” is not a span from the input passage, and
+turn 13 since its answer is scattered in the sentence
+“Some of his cats have orange fur, some have black
+fur, some are spotted and one is white”.
+After deleting questions that are not suitable for
+SQG, we replaced the remaining answers into cer-
+tain spans from the input passage. As shown in
+Table 7, in most cases the original answers were
+already a certain span. We slightly modified an-
+swers in turn 2, 7 from “Eight”, “Three” into “8”,
+“3” respectively. Finally, we rewrote all remaining
+questions to make them coherent. During this pro-
+cess, we mainly deal with information omission
+and coreference. In our example, we added a word
+“feline” into questions in turn 14 since the question
+13 was deleted.
+B Details of Experiments
+We used the 200-dimentional pre-trained GloVe
+word embeddings 3 as initial value of word embed-
+dings. During the training process, these embed-
+dings were further fine-tuned. The NLTK4 package
+was used for sentence splitting and word tokeniza-
+tion. In our model, we set ds, dr, dg to 200, 256
+and 128. For the passage-info encoder, we used 16
+heads in the multil-attention layer. For the answer-
+info encoder, we used 8 vanilla self-attention heads
+and additional 6 answer-aware heads for each an-
+swer. To construct the two graphs, we set δ into 3.
+In our dual-graph interaction, we set T into 4.
+To train our model, we used an Adam optimizer
+with momentums β1 = 0.9, β2 = 0.99 and  =
+10−8 to minimize the loss function. We varied the
+learning rate throughout training, including a warm-
+up step and a decreasing step similar to the original
+Transformer. Besides, we applied dropout between
+0.4 and 0.5 to prevent over-fitting. Our model was
+trained on two Nvidia RTX 2080Ti graphics cards.
+Since we noticed that the available baseline
+codes used different scripts to compute BLEU,
+3https://nlp.stanford.edu/projects/
+glove/
+4https://www.nltk.org/
+ROUGE and METEOR, we used new scripts5 to
+compute the evaluation metrics in this paper.
+5https://github.com/tylin/
+coco-caption/tree/master/pycocoevalcap
+237
+Brendan loves cats. He owns 8 cats. He has 7 girl cats and only 1 boy cat. Brendan brushes
+the cats’ hair every day. He makes sure to feed them every morning and evening and always
+checks to see if the cats have water. Sometimes he feeds them special treats because he loves
+them. Each cat gets 3 treats. He doesn’t give them food like chips and cake and candy, because
+those foods aren’t good for cats. He likes to play with the cats. The cats like to chase balls of
+paper that Brendan makes for them. Some of his cats have orange fur, some have black fur,
+some are spotted and one is white. The white cat is Brendan’s favorite. She is the first cat he
+owned. Her name is Snowball. When he first got Snowball she was a kitten. His other cats are
+named Fluffy, Salem, Jackie, Cola, Snickers, Pumpkin and Whiskers.
+turn Original QA-Pairs New QA-Pairs
+1 What does he care for? (cats) What does he care for? (cats)
+2 How many does he have? (Eight) How many does he have? (8)
+3 Are there more males or females? (females) Deleted
+4 How many? (7 girl cats and only 1 boy cat)
+How many males and females?
+(7 girl cats and only 1 boy cat)
+5 What is groomed? (cat’s hair) What is groomed? (cat’s hair)
+6 What do they get fed? (treats) What do they get fed? (treats)
+7 How many? (Three) How many? (3)
+8 Why (because he loves them) Why (because he loves them)
+9
+What foods are avoided?
+(chips and cake and candy)
+What foods are avoided?
+(chips and cake and candy)
+10
+Why? (because those foods aren’t
+good for cats)
+Why? (because those foods
+aren’t good for cats)
+11 What toys do they like? (balls of paper) What toys do they like? (balls of paper)
+12 Who creates them? (Brendan) Who creates them? (Brendan)
+13
+What colors are the felines?
+(orange, black, spotted, and white)
+Deleted
+14
+Which is the most liked?
+(The white cat)
+Which is the most liked?
+(The white cat)
+15 Is this his original one? (yes) Deleted
+16 What is its gender? (female) Deleted
+17 What does he call it? (Snowball) What does he call it? (Snowball)
+18 Is there one called Binky? (No) Deleted
+19 How about Scruff? (No) Deleted
+Table 7: Example for data labeling.

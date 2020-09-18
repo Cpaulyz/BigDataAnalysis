@@ -1,0 +1,645 @@
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 5516–5522
+July 5 - 10, 2020. c©2020 Association for Computational Linguistics
+5516
+A Re-evaluation of Knowledge Graph Completion Methods
+Zhiqing Sun1∗ Shikhar Vashishth1,2∗ Soumya Sanyal2∗
+Partha Talukdar2 Yiming Yang1
+1 Carnegie Mellon University, 2 Indian Institute of Science
+{zhiqings,svashish,yiming}@cs.cmu.edu
+{soumyasanyal,ppt}@iisc.ac.in
+Abstract
+Knowledge Graph Completion (KGC) aims
+at automatically predicting missing links for
+large-scale knowledge graphs. A vast num-
+ber of state-of-the-art KGC techniques have
+got published at top conferences in several
+research fields, including data mining, ma-
+chine learning, and natural language process-
+ing. However, we notice that several recent
+papers report very high performance, which
+largely outperforms previous state-of-the-art
+methods. In this paper, we find that this can be
+attributed to the inappropriate evaluation proto-
+col used by them and propose a simple evalua-
+tion protocol to address this problem. The pro-
+posed protocol is robust to handle bias in the
+model, which can substantially affect the final
+results. We conduct extensive experiments and
+report performance of several existing meth-
+ods using our protocol. The reproducible code
+has been made publicly available.
+1 Introduction
+Real-world knowledge bases are usually expressed
+as multi-relational graphs, which are collections
+of factual triplets, where each triplet (h, r, t) rep-
+resents a relation r between a head entity h and a
+tail entity t. However, real-word knowledge bases
+are usually incomplete (Dong et al., 2014), which
+motivates the research of automatically predicting
+missing links. A popular approach for Knowledge
+Graph Completion (KGC) is to embed entities and
+relations into continuous vector or matrix space,
+and use a well-designed score function f(h, r, t) to
+measure the plausibility of the triplet (h, r, t). Most
+of the previous methods use translation distance
+based (Bordes et al., 2013; Wang et al., 2014; Xiao
+et al., 2016; Sun et al., 2019) and semantic match-
+ing based (Nickel and Tresp, 2013; Yang et al.,
+2014; Nickel et al., 2016; Trouillon et al., 2016;
+∗Equal contribution.
+Liu et al., 2017) scoring functions which are easy
+to analyze.
+However, recently, a vast number of neural
+network-based methods have been proposed. They
+have complex score functions which utilize black-
+box neural networks including Convolutional Neu-
+ral Networks (CNNs) (Dettmers et al., 2018;
+Nguyen et al., 2018), Recurrent Neural Networks
+(RNNs) (Lin et al., 2015; Wang et al., 2018),
+Graph Neural Networks (GNNs) (Schlichtkrull
+et al., 2017; Shang et al., 2019), and Capsule
+Networks (Nguyen et al., 2019). While some of
+them report state-of-the-art performance on several
+benchmark datasets that are competitive to previous
+embedding-based approaches, a considerable por-
+tion of recent neural network-based papers report
+very high performance gains which are not con-
+sistent across different datasets. Moreover, most
+of these unusual behaviors are not at all analyzed.
+Such a pattern has become prominent and is mis-
+leading the whole community.
+In this paper, we investigate this problem and
+find that this is attributed to the inappropriate eval-
+uation protocol used by these approaches. We
+demonstrate that their evaluation protocol gives
+a perfect score to a model that always outputs a
+constant irrespective of the input. This has lead to
+artificial inflation of performance of several mod-
+els. For this, we find a simple evaluation protocol
+that creates a fair comparison environment for all
+types of score functions. We conduct extensive ex-
+periments to re-examine some recent methods and
+fairly compare them with existing approaches. The
+source code of the paper has been publicly avail-
+able at http://github.com/svjan5/kg-reeval.
+2 Background
+Knowledge Graph Completion Given a Knowl-
+edge Graph G = (E ,R, T ), where E and R de-
+5517
+FB15k-237 WN18RR
+ConvE .325 .430
+RotatE .338 (+4.0%) .476 (+10.6%)
+TuckER .358 (+10.2%) .470 (+9.3%)
+ConvKB .396 (+21.8%) .248 (-42.3%)
+CapsE .523 (+60.9%) .415 (-3.4%)
+KBAT .518 (+59.4%) .440 (+2.3%)
+TransGate .404 (+24.3%) .409 (-4.9%)
+Table 1: Changes in MRR for different methods on
+FB15k-237 and WN18RR datasets with respect to
+ConvE show inconsistent improvements.
+note the set of entities and relations and T =
+{(h, r, t) | h, t ∈ E , r ∈ R} is the set of triplets
+(facts), the task of Knowledge Graph Completion
+(KGC) involves inferring missing facts based on
+the known facts. Most the existing methods de-
+fine an embedding for each entity and relation in
+G, i.e., eh, er ∀h ∈ E , r ∈ R and a score function
+f(h, r, t) : E ×R× E → R which assigns a high
+score for valid triplets than the invalid ones.
+KGC Evaluation During KGC evaluation, for
+predicting t in a given triplet (h, r, t), a KGC
+model scores all the triplets in the set T ′ =
+{(h, r, t′) | t′ ∈ E}. Based on the score, the model
+first sorts all the triplets and subsequently finds the
+rank of the valid triplet (h, r, t) in the list. In a
+more relaxed setting called filtered setting, all the
+known correct triplets (from train, valid, and test
+triplets) are removed from T ′ except the one be-
+ing evaluated (Bordes et al., 2013). The triplets in
+T ′ − {t} are called negative samples.
+Related Work Prior to our work, Kadlec et al.
+(2017) cast doubt on the claim that performance im-
+provement of several models is due to architectural
+changes as opposed to hyperparameter tuning or
+different training objective. In our work, we raise
+similar concerns but through a different angle by
+highlighting issues with the evaluation procedure
+used by several recent methods. Chandrahas et al.
+(2018) analyze the geometry of KG embeddings
+and its correlation with task performance while
+Nayyeri et al. (2019) examine the effect of differ-
+ent loss functions on performance. However, their
+analysis is restricted to non-neural approaches.
+0 2000 4000 6000 8000 10000
+Knowledge Graph Entities
+0.2
+0.4
+0.6
+0.8
+1.0
+Tr
+ip
+le
+t 
+Sc
+or
+e
+Figure 1: Sorted score distribution of ConvKB for an
+example valid triplet and its negative samples. The
+score is normalized into [0, 1] (lower the better). Dot-
+ted line indicate the score for the valid triplet. We find
+that in this example, around 58.5% negative sampled
+triplets obtain the exact same score as the valid triplet.
+3 Observations
+In this section, we first describe our observations
+and concerns and then investigate the reason be-
+hind.
+3.1 Inconsistent Improvements over
+Benchmark Datasets
+Several recently proposed methods report high
+performance gains on a particular dataset. How-
+ever, their performance on another dataset is not
+consistently improved. In Table 1, we report
+change in MRR score on FB15k-237 (Toutanova
+and Chen, 2015) and WN18RR (Dettmers et al.,
+2018) datasets with respect to ConvE (Dettmers
+et al., 2018) for different methods including RotatE
+(Sun et al., 2019), TuckER (Balažević et al., 2019),
+ConvKB (Nguyen et al., 2018), CapsE (Nguyen
+et al., 2019), KBAT (Nathani et al., 2019), and
+TransGate (Yuan et al., 2019). Overall, we find that
+for a few recent NN based methods, there are incon-
+sistent gains on these two datasets. For instance,
+in ConvKB, there is a 21.8% improvement over
+ConvE on FB15k-237, but a degradation of 42.3%
+on WN18RR, which is surprising given the method
+is claimed to be better than ConvE. On the other
+hand, methods like RotatE and TuckER give consis-
+tent improvement across both benchmark datasets.
+3.2 Observations on Score Functions
+Score distribution When evaluating KGC meth-
+ods, for a given triplet (h, r, t), the ranking of t
+given h and r is computed by scoring all the triplets
+of form {(h, r, t′) | t′ ∈ E}, where E is the set of
+5518
+Fr
+eq
+ue
+nc
+y
+0
+1250
+2500
+3750
+5000
+Number of Triplets with Same Score
+1-4 5-1
+6
+17
+-64
+65
+-25
+6
+25
+7-1
+02
+4
+10
+25
+-40
+96
+40
+97
+-16
+38
+4
+ConvKB
+CapsE
+ConvE
+Figure 2: Plot shows the frequency of the number of
+negative triplets with the same assigned score as the
+valid triplet during evaluation on FB15k-237 dataset.
+The results show that for methods like ConvKB and
+CapsE, a large number of negative triplets get the same
+score as the valid triplets whereas for methods like
+ConvE such occurrences are rare.
+all entities. On investing a few recent NN based ap-
+proaches, we find that they have unusual score dis-
+tribution, where some negatively sampled triplets
+have the same score as the valid triplet. An in-
+stance of FB15k-237 dataset is presented in Figure
+1. Here, out of 14,541 negatively sampled triplets,
+8,520 have the exact same score as the valid triplet.
+Statistics on the whole dataset In Figure 2, we
+report the total number of triplets with the exact
+same score over the entire dataset for ConvKB
+(Nguyen et al., 2018) and CapsE (Nguyen et al.,
+2019) and compare them with ConvE (Dettmers
+et al., 2018) which does not suffer from this issue.
+We find that both ConvKB and CapsE have multiple
+occurrences of such unusual score distribution. On
+average, ConvKB and CapsE have 125 and 197
+entities with exactly same score as the valid triplet
+over the entire evaluation dataset of FB15k-237,
+whereas ConvE has around 0.002, which is almost
+negligible. In Section 4, we demonstrate how this
+leads to massive performance gain for methods like
+ConvKB and CapsE.
+Root of the problem Further, we investigate the
+cause behind such unusual score distribution. In
+Figure 3, we plot the ratio of neurons becoming
+zero after ReLU activation for the valid triplets vs.
+their normalized frequency on FB15k-237 dataset.
+The results show that in ConvKB and CapsE, a
+large fraction (87.3% and 92.2% respectively) of
+the neurons become zeros after applying ReLU
+0.0 0.2 0.4 0.6 0.8 1.0
+Ratio of Neurons becoming zero
+0
+5
+10
+15
+20
+25
+30
+N
+or
+m
+al
+iz
+ed
+ F
+re
+qu
+en
+cy
+ConvKB
+CapsE
+ConvE
+Figure 3: Distribution of ratio of neurons becoming
+zero after ReLU activation in different methods for the
+valid triplets in FB15k-237 dataset. We find that for
+ConvKB and CapsE an unusually large fraction of neu-
+rons become zero after ReLU activation whereas the
+does not hold with ConvE.
+activation. However, with ConvE, this count is
+substantially less (around 41.1%). Because of the
+zeroing of nearly all neurons (at least 14.2% for
+ConvKB and 22.0% for CapsE), the representation
+of several triplets become very similar during for-
+ward pass and thus leading to obtaining the exact
+same score.
+4 Evaluation Protocols for KGC
+In this section, we present different evaluation pro-
+tocols that can be adopted in knowledge graph com-
+pletion. We further show that inappropriate evalua-
+tion protocol is the key reason behind the unusual
+behavior of some recent NN-based methods.
+How to deal with the same scores? An essential
+aspect of the evaluation method is to decide how
+to break ties for triplets with the same score. More
+concretely, while scoring the candidate set T ′, if
+there are multiple triplets with the same score from
+the model, one should decide which triplet to pick.
+Assuming that the triplets are sorted in a stable
+manner, we design a general evaluation scheme
+for KGC, which consists of the following three
+different protocols:
+• TOP: In this setting, the correct triplet is inserted
+in the beginning of T ′.
+• BOTTOM: Here, the correct triplet is inserted at
+the end of T ′.
+• RANDOM: In this, the correct triplet is placed
+randomly in T ′.
+5519
+Reported RANDOM TOP BOTTOM
+MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑
+ConvE .325 244 .501 .324 ± .0 285 ± 0 .501 ± .0 .324 285 .501 .324 285 .501
+RotatE .338 177 .533 .336 ± .0 178 ± 0 .530 ± .0 .336 178 .530 .336 178 .530
+TuckER .358 - .544 .353 ± .0 162 ± 0 .536 ± .0 .353 162 .536 .353 162 .536
+ConvKB .396 257 .517 .243 ± .0 309 ± 2 .421 ± .0 .407 246 .527 .130 373 .383(+.164) (-63) (+.106) (-.113) (+64) (-.038)
+CapsE .523 303 .593 .150 ± .0 403 ± 2 .356 ± .0 .511 305 .586 .134 502 .297(+.361) (-99) (+.229) (-.016) (+99) (-.059)
+KBAT .518† 210† .626† .157 ± .0 270 ± 0 .331 ± .0 .157 270 .331 .157 270 .331
+Table 2: Effect of different evaluation protocols on recent KG embedding methods on FB15k-237 dataset. For
+TOP and BOTTOM, we report changes in performance with respect to RANDOM protocol. Please refer to Section
+5.4 for details. †: KBAT has test data leakage in their original implementation, which is fixed in our experiments.
+Discussion Based on the definition of the three
+evaluation protocols, it is clear that TOP evaluation
+protocol does not evaluate the model rigorously. It
+gives the models that have a bias to provide the
+same score for different triplets, an inappropriate
+advantage. On the other hand, BOTTOM evaluation
+protocol can be unfair to the model during infer-
+ence time because it penalizes the model for giving
+the same score to multiple triplets, i.e., if many
+triplets have the same score as the correct triple,
+the correct triplet gets the least rank possible.
+As a result, RANDOM is the best evaluation
+technique which is both rigorous and fair to the
+model. It is in line with the situation we meet in the
+real world: given several same scored candidates,
+the only option is to select one of them randomly.
+Hence, we propose to use RANDOM evaluation
+scheme for all model performance comparisons.
+5 Experiments
+In this section, we conduct extensive experiments
+using our proposed evaluation protocols and make
+a fair comparison for several existing methods.
+5.1 Datasets
+We evaluate the proposed protocols on FB15k-237
+(Toutanova and Chen, 2015) dataset1, which is a
+subset of FB15k (Bordes et al., 2013) with inverse
+relations deleted to prevent direct inference of test
+triples from training.
+5.2 Methods Analyzed
+In our experiments, we categorize existing KGC
+methods into the following two categories:
+1We also report our results on WN18RR (Dettmers et al.,
+2018) dataset in the appendix.
+• Non-Affected: This includes methods which
+give consistent performance under different eval-
+uation protocols. For experiments in this paper,
+we consider three such methods – ConvE, Ro-
+tatE, and TuckER.
+• Affected: This category consists of recently pro-
+posed neural-network based methods whose per-
+formance is affected by different evaluation pro-
+tocols. ConvKB, CapsE, TransGate2, and KBAT
+are methods in this category.
+5.3 Evaluation Metrics
+For all the methods, we use the code and the hyper-
+parameters provided by the authors in their respec-
+tive papers. Model performance is evaluated by
+Mean Reciprocal Rank (MRR), Mean Rank (MR)
+and Hits@10 (H@10) on the filtered setting (Bor-
+des et al., 2013).
+5.4 Evaluation Results
+To analyze the effect of different evaluation proto-
+cols described in Section 4, we study the perfor-
+mance variation of the models listed in Section 5.2.
+We study the effect of using TOP and BOTTOM pro-
+tocols and compare them to RANDOM protocol. In
+their original paper, ConvE, RotatE, and TuckER
+use a strategy similar to the proposed RANDOM
+protocol, while ConvKB, CapsE, and KBAT use
+TOP protocol. We also study the random error in
+RANDOM protocol with multiple runs, where we
+report the average and standard deviation on 5 runs
+with different random seeds. The results are pre-
+sented in Tables 2.
+2Since we cannot find any open-source implementation
+of TransGate, we leave the re-evaluation of TransGate as our
+future work.
+5520
+We observe that for Non-Affected methods like
+ConvE, RotatE, and TuckER, the performance re-
+mains consistent across different evaluation pro-
+tocols. However, with Affected methods, there is
+a considerable variation in performance. Specifi-
+cally, we can observe that these models perform
+best when evaluated using TOP and worst when
+evaluated using BOTTOM3. Finally, we find that the
+proposed RANDOM protocol is very robust to dif-
+ferent random seeds. Although the theoretic upper
+and lower bounds of a RANDOM score are TOP and
+BOTTOM scores respectively, when we evaluate
+knowledge graph completion for real-world large-
+scale knowledge graphs, the randomness doesn’t
+affect the evaluation results much.
+6 Conclusion
+In this paper, we performed an extensive re-
+examination study of recent neural network based
+KGC techniques. We find that many such models
+have issues with their score functions. Combined
+with inappropriate evaluation protocol, such meth-
+ods reported inflated performance. Based on our
+observations, we propose RANDOM evaluation pro-
+tocol that can clearly distinguish between these
+affected methods from others. We also strongly
+encourage the research community to follow the
+RANDOM evaluation protocol for all KGC evalua-
+tion purposes.
+Acknowledgements
+We thank the reviewers for their helpful comments.
+This work is supported in part by the National Sci-
+ence Foundation (NSF) under grant IIS-1546329
+and Google PhD Fellowship.
+References
+Ivana Balažević, Carl Allen, and Timothy M
+Hospedales. 2019. Tucker: Tensor factorization for
+knowledge graph completion. In Empirical Methods
+in Natural Language Processing.
+Antoine Bordes, Nicolas Usunier, Alberto Garcia-
+Duran, Jason Weston, and Oksana Yakhnenko.
+2013. Translating embeddings for modeling multi-
+relational data. In C. J. C. Burges, L. Bottou,
+M. Welling, Z. Ghahramani, and K. Q. Weinberger,
+editors, Advances in Neural Information Processing
+3KBAT incorporates ConvKB in the last layer of its model
+architecture, which should be affected by different evaluation
+protocols. But we find another bug on the leakage of test
+triples during negative sampling in the reported model, which
+results in more significant performance degradation.
+Systems 26, pages 2787–2795. Curran Associates,
+Inc.
+Chandrahas, Aditya Sharma, and Partha Talukdar.
+2018. Towards understanding the geometry of
+knowledge graph embeddings. In Proceedings of
+the 56th Annual Meeting of the Association for Com-
+putational Linguistics (Volume 1: Long Papers),
+pages 122–131, Melbourne, Australia. Association
+for Computational Linguistics.
+Tim Dettmers, Minervini Pasquale, Stenetorp Pon-
+tus, and Sebastian Riedel. 2018. Convolutional 2d
+knowledge graph embeddings. In Proceedings of
+the 32th AAAI Conference on Artificial Intelligence,
+pages 1811–1818.
+Xin Dong, Evgeniy Gabrilovich, Geremy Heitz, Wilko
+Horn, Ni Lao, Kevin Murphy, Thomas Strohmann,
+Shaohua Sun, and Wei Zhang. 2014. Knowledge
+vault: A web-scale approach to probabilistic knowl-
+edge fusion. In Proceedings of the 20th ACM
+SIGKDD International Conference on Knowledge
+Discovery and Data Mining, KDD ’14, pages 601–
+610, New York, NY, USA. ACM.
+Rudolf Kadlec, Ondrej Bajgar, and Jan Kleindienst.
+2017. Knowledge base completion: Baselines strike
+back. In Proceedings of the 2nd Workshop on Rep-
+resentation Learning for NLP, pages 69–74, Vancou-
+ver, Canada. Association for Computational Linguis-
+tics.
+Yankai Lin, Zhiyuan Liu, Huanbo Luan, Maosong Sun,
+Siwei Rao, and Song Liu. 2015. Modeling relation
+paths for representation learning of knowledge bases.
+In Proceedings of the 2015 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+705–714, Lisbon, Portugal. Association for Compu-
+tational Linguistics.
+Hanxiao Liu, Yuexin Wu, and Yiming Yang. 2017.
+Analogical inference for multi-relational embed-
+dings. In Proceedings of the 34th International
+Conference on Machine Learning, volume 70 of
+Proceedings of Machine Learning Research, pages
+2168–2178, International Convention Centre, Syd-
+ney, Australia. PMLR.
+Deepak Nathani, Jatin Chauhan, Charu Sharma, and
+Manohar Kaul. 2019. Learning attention-based
+embeddings for relation prediction in knowledge
+graphs. In Proceedings of the 57th Annual Meet-
+ing of the Association for Computational Linguistics.
+Association for Computational Linguistics.
+Mojtaba Nayyeri, Chengjin Xu, Yadollah
+Yaghoobzadeh, Hamed Shariat Yazdi, and Jens
+Lehmann. 2019. Toward Understanding The
+Effect Of Loss function On Then Performance Of
+Knowledge Graph Embedding. arXiv e-prints, page
+arXiv:1909.00519.
+Dai Quoc Nguyen, Tu Dinh Nguyen, Dat Quoc
+Nguyen, and Dinh Phung. 2018. A novel embed-
+ding model for knowledge base completion based
+5521
+on convolutional neural network. In Proceedings of
+the 2018 Conference of the North American Chap-
+ter of the Association for Computational Linguistics:
+Human Language Technologies, Volume 2 (Short
+Papers), pages 327–333. Association for Computa-
+tional Linguistics.
+Dai Quoc Nguyen, Thanh Vu, Tu Dinh Nguyen,
+Dat Quoc Nguyen, and Dinh Phung. 2019. A Cap-
+sule Network-based Embedding Model for Knowl-
+edge Graph Completion and Search Personalization.
+In Proceedings of the 2019 Annual Conference of
+the North American Chapter of the Association for
+Computational Linguistics: Human Language Tech-
+nologies (NAACL-HLT), pages 2180–2189.
+Maximilian Nickel, Lorenzo Rosasco, and Tomaso
+Poggio. 2016. Holographic embeddings of knowl-
+edge graphs. In Proceedings of the Thirtieth AAAI
+Conference on Artificial Intelligence, AAAI’16,
+pages 1955–1961. AAAI Press.
+Maximilian Nickel and Volker Tresp. 2013. Tensor fac-
+torization for multi-relational learning. In Machine
+Learning and Knowledge Discovery in Databases,
+pages 617–621, Berlin, Heidelberg. Springer Berlin
+Heidelberg.
+Jeffrey Pennington, Richard Socher, and Christopher
+Manning. 2014. Glove: Global vectors for word rep-
+resentation. In Proceedings of the 2014 conference
+on empirical methods in natural language process-
+ing (EMNLP), pages 1532–1543.
+Michael Schlichtkrull, Thomas N Kipf, Peter Bloem,
+Rianne van den Berg, Ivan Titov, and Max Welling.
+2017. Modeling relational data with graph convolu-
+tional networks. arXiv preprint arXiv:1703.06103.
+Chao Shang, Yun Tang, Jing Huang, Jinbo Bi, Xi-
+aodong He, and Bowen Zhou. 2019. End-to-end
+structure-aware convolutional networks for knowl-
+edge base completion.
+Zhiqing Sun, Zhi-Hong Deng, Jian-Yun Nie, and Jian
+Tang. 2019. Rotate: Knowledge graph embedding
+by relational rotation in complex space. In Interna-
+tional Conference on Learning Representations.
+Kristina Toutanova and Danqi Chen. 2015. Observed
+versus latent features for knowledge base and text
+inference. In Proceedings of the 3rd Workshop on
+Continuous Vector Space Models and their Compo-
+sitionality, pages 57–66.
+Théo Trouillon, Johannes Welbl, Sebastian Riedel, Éric
+Gaussier, and Guillaume Bouchard. 2016. Complex
+embeddings for simple link prediction. In Proceed-
+ings of the 33rd International Conference on Inter-
+national Conference on Machine Learning - Volume
+48, ICML’16, pages 2071–2080. JMLR.org.
+Haoyu Wang, Vivek Kulkarni, and William Yang Wang.
+2018. DOLORES: deep contextualized knowledge
+graph embeddings. CoRR, abs/1811.00147.
+Zhen Wang, Jianwen Zhang, Jianlin Feng, and Zheng
+Chen. 2014. Knowledge graph embedding by trans-
+lating on hyperplanes. In Proceedings of the Twenty-
+Eighth AAAI Conference on Artificial Intelligence,
+AAAI’14, pages 1112–1119. AAAI Press.
+Han Xiao, Minlie Huang, and Xiaoyan Zhu. 2016.
+Transg : A generative model for knowledge graph
+embedding. In Proceedings of the 54th Annual
+Meeting of the Association for Computational Lin-
+guistics (Volume 1: Long Papers), pages 2316–2325.
+Association for Computational Linguistics.
+Bishan Yang, Wen-tau Yih, Xiaodong He, Jianfeng
+Gao, and Li Deng. 2014. Embedding entities and
+relations for learning and inference in knowledge
+bases. CoRR, abs/1412.6575.
+Jun Wen Yuan, Neng Gao, and Ji Xiang. 2019. Trans-
+gate: Knowledge graph embedding with shared gate
+structure. In AAAI.
+Appendix
+A Results on WN18RR dataset
+Besides FB15k-237, we also evaluate the proposed
+protocols on WN18RR (Dettmers et al., 2018)
+dataset, which is a subset of WN18 (Bordes et al.,
+2013) containing lexical relations between words.
+Similar to FB15k-237, inverse relations are re-
+moved in WN18RR. The results on WN18RR are
+shown in Table 3. From these results, we can draw
+similar conclusions as in Section 5. We also show
+the total number of triplets with the exact same
+score over the entire WN18RR dataset for Con-
+vKB, CapsE and ConvE in Figure 4.
+5522
+Reported RANDOM TOP BOTTOM
+MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑ MRR ↑ MR ↓ H@10 ↑
+ConvE .43 4187 .52 .444 ± .0 4950 ± 0 .503 ± .0 .444 4950 .503 .444 4950 .503
+RotatE .476 3340 .571 .473 ± .0 3343 ± 0 .571 ± .0 .473 3343 .571 .473 3343 .571
+TuckER .470 - .526 .461 ± .0 6324 ± 0 .516 ± .0 .461 6324 .516 .461 6324 .516
+ConvKB .248 2554 .525 .249 ± .0 3433 ± 42 .524 ± .0 .251 1696 .529 .164 5168 .516(+.002) (-1737) (+.005) (-.085) (+1735) (-.008)
+CapsE‡ .415 719 .560 .415 ± .0 718 ± 0 .559 ± .0 .415 718 .559 .323 719 .555(-.092) (+1) (-.004)
+KBAT .440† 1940† .581† .412 ± .0 1921 ± 0 .554 ± .0 .412 1921 .554 .412 1921 .554
+Table 3: Performance comparison under different evaluation protocols on WN18RR dataset. For TOP and BOT-
+TOM, we report changes in performance with respect to RANDOM protocol. ‡: CapsE uses the pre-trained 100-
+dimensional Glove (Pennington et al., 2014) word embeddings for initialization on WN18RR dataset, which makes
+the comparison on WN18RR still unfair. †: KBAT has test data leakage in their original implementation, which is
+fixed in our experiments.
+Fr
+eq
+ue
+nc
+y
+0
+150
+300
+450
+600
+Number of Triplets with Same Score
+1-4 5-1
+6
+17
+-64
+65
+-25
+6
+25
+7-1
+02
+4
+10
+25
+-40
+96
+40
+97
+-16
+38
+4
+16
+38
+5-6
+55
+36
+ConvKB
+CapsE
+ConvE
+Figure 4: Plot shows the frequency of the number
+of negative triplets with the same assigned score as
+the valid triplet during evaluation on WN18RR dataset.
+The results show that Unlike FB15k-237, in this dataset,
+only ConvKB has a large number of negative triplets
+get the same score as the valid triplets.

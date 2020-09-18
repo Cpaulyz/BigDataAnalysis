@@ -1,0 +1,993 @@
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 3086–3095
+July 5 - 10, 2020. c©2020 Association for Computational Linguistics
+3086
+Distinguish Confusing Law Articles for Legal Judgment Prediction
+Nuo Xu1, Pinghui Wang2,1∗, Long Chen1, Li Pan3, Xiaoyan Wang4, Junzhou Zhao1∗
+1MOE NEKEY Lab, Xi’an Jiaotong University, China
+2Shenzhen Research School, Xi’an Jiaotong University, China
+3School of Electronic, Information and Electrical Engineering, Shanghai Jiao Tong University
+4Information Technology Service Center, The Supreme People’s Court, China
+nxu@sei.xjtu.edu.cn, phwang@mail.xjtu.edu.cn,
+chenlongche@stu.edu.cn, panli@sjtu.edu.cn,
+wangxiaoyan@court.gov.cn, junzhouzhao@gmail.com
+Abstract
+Legal Judgment Prediction (LJP) is the task
+of automatically predicting a law case’s judg-
+ment results given a text describing its facts,
+which has excellent prospects in judicial assis-
+tance systems and convenient services for the
+public. In practice, confusing charges are fre-
+quent, because law cases applicable to similar
+law articles are easily misjudged. For address-
+ing this issue, the existing method relies heav-
+ily on domain experts, which hinders its appli-
+cation in different law systems. In this paper,
+we present an end-to-end model, LADAN, to
+solve the task of LJP. To distinguish confusing
+charges, we propose a novel graph neural net-
+work to automatically learn subtle differences
+between confusing law articles and design a
+novel attention mechanism that fully exploit-
+s the learned differences to extract compelling
+discriminative features from fact description-
+s attentively. Experiments conducted on real-
+world datasets demonstrate the superiority of
+our LADAN.
+1 Introduction
+Exploiting artificial intelligence techniques to as-
+sist legal judgment has become popular in recent
+years. Legal judgment prediction (LJP) aims to
+predict a case’s judgment results, such as appli-
+cable law articles, charges, and terms of penalty,
+based on its fact description, as illustrated in Fig-
+ure 1. LJP can assist judiciary workers in process-
+ing cases and offer legal consultancy services to
+the public. In the literature, LJP is usually formu-
+lated as a text classification problem, and several
+rule-based methods (Liu et al., 2004; Lin et al.,
+2012) and neural-based methods (Hu et al., 2018;
+Luo et al., 2017; Zhong et al., 2018) have been
+proposed.
+The main drawback of existing methods is that
+they cannot solve the confusing charges issue.
+∗Corresponding authors.
+Judgment results
+Fact Description
+Law Articles
+Charges
+Terms of Penalty
+At 18:00 on October 26, 2015, the defendant Zhao XX and 
+Zhang XX had an altercation. Zhao XX beat up Zhang 
+and caused injuries. After identification, the injuries of 
+bilateral nasal bone fractures of Zhang XX were minor 
+injuries of grade ii……
+Law Article 234:[The Crime of intentional injury]Whoever 
+intentionally injures another person shall be sentenced to 
+fixed-term imprisonment of not more than three years, 
+criminal detention or public surveillance……
+Crime of intentional injury
+A fixed-term imprisonment of ten months
+Figure 1: An illustration of the LJP. Generally, a judge
+needs to conduct professional analysis and reasoning
+on the fact description of the case, and then choose rea-
+sonable law articles, charges and the term of penalty to
+convict the offender.
+That is, due to the high similarity of several law ar-
+ticles, their corresponding law cases can be easily
+misjudged. For example, in Figure 2, both Article
+385 and Article 163 describe offenses of accept-
+ing bribes, and their subtle difference is whether
+the guilty parties are state staffs or not. The key to
+solving the confusing charges issue is how to cap-
+ture essential but rare features for distinguishing
+confusing law articles. Hu et al. (2018) defined ten
+discriminative attributes to distinguish confusing
+charges. However, their method relies too much
+on experts to hinder its applications in a large
+number of laws. In practice, we desire a method
+that can automatically extract textual features from
+law articles to assist JLP. The most relevant exist-
+ing work to this requirement is (Luo et al., 2017),
+which used an attention mechanism to extract fea-
+tures from fact descriptions with respect to a spe-
+cific law article. As shown in Figure 3a, for each
+law article, an attention vector is computed, which
+is used to extract features from the fact description
+of a law case to predict whether the law article is
+applicable to the case. Nevertheless, the weakness
+3087
+Any state staffs who, taking advantage of his position, demands money or 
+property from another person, or illegally accepts another person's 
+money or property in return for securing benefits for the person shall be 
+guilty of acceptance of bribes.
+Article 385: The Crime of acceptance of bribes
+Whoever, in order to seek illegitimate benefits, gives any state staffs with 
+money and property, shall be the crime of bribery
+Article 389: Crime of offering bribes
+Whoever, in order to seek illegitimate benefits, gives employees of 
+companies, enterprises or other units with money or property , shall be 
+guilty of bribing non-state staffs.
+Article 164: The crime of offering bribes to non-state staff
+The employees of companies, enterprises or other units who, taking 
+advantage of his position, demands money or property from another 
+person, or illegally accepts another person's money or property in return 
+for securing benefits for the person shall be guilty of bribery crime of non-
+state staffs.
+Article 163: Bribery crime of non-state staffs
+Figure 2: Examples of confusing charges.
+is that they learn each law article’s attention vector
+independently, and this may result in that similar
+attention vectors are learned for semantically close
+law articles; hence, it is ineffective in distinguish-
+ing confusing charges.
+To solve the confusing charges issue, we pro-
+pose an end-to-end framework, i.e., Law Article
+Distillation based Attention Network (LADAN).
+LADAN uses the difference among similar law ar-
+ticles to attentively extract features from law cas-
+es’ fact descriptions, which is more effective in
+distinguishing confusing law articles, and improve
+the performance of LJP. To obtain the difference
+among similar law articles, a straightforward way
+is to remove duplicated texts between two law arti-
+cles and only use the leftover texts for the attention
+mechanism. However, we find that this method
+may generate the same leftover texts for differen-
+t law article, and generate misleading information
+to LJP. As shown in Fig. 2, if we remove the dupli-
+cated phrases and sentences between Article 163
+and Article 385 (i.e., the red text in Fig. 2), and
+between Article 164 and Article 389 (i.e., the pink
+text in Fig. 2), respectively, then Article 385 and
+Article 389 will be almost same to each other (i.e.,
+the blue text in Fig. 2).
+We design LADAN based on the following ob-
+servation: it is usually easy to distinguish dis-
+similar law articles as sufficient distinctions exist,
+but challenging to discriminate similar law articles
+due to the few useful features. We first group law
+articles into different communities, and law arti-
+cles in the same community are highly similar to
+each other. Then we propose a graph-based rep-
+resentation learning method to automatically ex-
+plore the difference among law articles and com-
+A1
+A2
+An
+...
+a b
+Fact 
+Description
+An-1
+An-2
+Fact 
+Description
+An-2
+An
+An-1
+...αn
+αn-1
+αn-2
+α1
+α2
+α3
+...
+A2A1
+A4 A3
+A3
+At-1
+At
+At+1
+Community 1
+Community m
+Community M
+√
+βm
+Community matching
+Attention computation
+Figure 3: a. The fact-law attention model in (Luo et al.,
+2017). b. Our framework. Variables α and β represent
+the encoded vectors learned for attentively extracting
+features from fact descriptions.
+pute an attention vector for each community. For
+an input law case, we learn both macro- and micro-
+level features. Macro-level features are used for
+predicting which community includes the applica-
+ble law articles. Micro-level features are attentive-
+ly extracted by the attention vector of the selected
+community for distinguishing confusing law arti-
+cles within the same community. Our main contri-
+butions are summarized as follows:
+(1) We develop an end-to-end framework, i.e.,
+LADAN, to solve the LJP task. It addresses the
+confusing charges issue by mining similarities be-
+tween fact descriptions and law articles as well as
+the distinctions between confusing law articles.
+(2) We propose a novel graph distillation oper-
+ator (GDO) to extract discriminative features for
+effectively distinguishing confusing law articles.
+(3) We conduct extensive experiments on real-
+world datasets. The results show that our model
+outperforms all state-of-the-art methods.
+2 Related Work
+Our work solves the problem of the confusing
+charge in the LJP task by referring to the calcu-
+lation principle of graph neural network (GNN).
+Therefore, in this section, we will introduce relat-
+ed works from these two aspects.
+2.1 Legal Judgment Prediction
+Existing approaches for legal judgment prediction
+(LJP) are mainly divided into three categories. In
+early times, works usually focus on analyzing ex-
+isting legal cases in specific scenarios with math-
+ematical and statistical algorithms (Kort, 1957;
+Nagel, 1963; Keown, 1980; Lauderdale and Clark,
+2012). However, these methods are limited to s-
+mall datasets with few labels. Later, a number of
+3088
+machine learning-based methods (Lin et al., 2012;
+Liu et al., 2004; Sulea et al., 2017) were develope-
+d to solve the problem of LJP, which almost com-
+bine some manually designed features with a lin-
+ear classifier to improve the performance of case
+classification. The shortcoming is that these meth-
+ods rely heavily on manual features, which suffer
+from the generalization problem.
+In recent years, researchers tend to exploit neu-
+ral networks to solve LJP tasks. Luo et al. (2017)
+propose a hierarchical attentional network to cap-
+ture the relation between fact description and rele-
+vant law articles to improve the charge prediction.
+Zhong et al. (2018) model the explicit dependen-
+cies among subtasks with scalable directed acyclic
+graph forms and propose a topological multi-task
+learning framework for effectively solving these
+subtasks together. Yang et al. (2019) further refine
+this framework by adding backward dependencies
+between the prediction results of subtasks. To the
+best of our knowledge, Hu et al. (2018) are the
+first to study the problem of discriminating con-
+fusing charges for automatically predicting appli-
+cable charges. They manually define 10 discrim-
+inative attributes and propose to enhance the rep-
+resentation of the case fact description by learning
+these attributes. This method relies too much on
+experts and cannot be easily extended to differen-
+t law systems. To solve this issue, we propose a
+novel attention framework that automatically ex-
+tracts differences between similar law articles to
+enhance the representation of fact description.
+2.2 Graph Neural Network
+Due to its excellent performance in graph struc-
+ture data, GNN has attracted significant atten-
+tion (Kipf and Welling, 2017; Hamilton et al.,
+2017; Bonner et al., 2019). In general, exist-
+ing GNNs focus on proposing different aggre-
+gation schemes to fuse features from the neigh-
+borhood of each node in the graph for extract-
+ing richer and more comprehensive information:
+Kipf et al. (2017) propose graph convolution net-
+works which use mean pooling to pool neighbor-
+hood information; GraphSAGE (Hamilton et al.,
+2017) concatenates the node’s features and applies
+mean/max/LSTM operators to pool neighborhood
+information for inductively learning node embed-
+dings; MR-GNN (Xu et al., 2019) aggregates the
+multi-resolution features of each node to exploit n-
+ode information, subgraph information, and glob-
+al information together; Besides, Message Pass-
+ing Neural Networks (Gilmer et al., 2017) further
+consider edge information when doing the aggre-
+gation. However, the aggregation schemes lead to
+the over-smoothing issue of graph neural network-
+s (Li et al., 2018), i.e., the aggregated node repre-
+sentations would become indistinguishable, which
+is entirely contrary to our goal of extracting distin-
+guishable information. So in this paper, we pro-
+pose our distillation operation, based on a distil-
+lation strategy instead of aggregation schemes, to
+extract the distinguishable features between simi-
+lar law articles.
+3 Problem Formulation
+In this section, we introduce some notations and
+terminologies, and then formulate the LJP task.
+Law Cases. Each law case consists of a fact de-
+scription and several judgment results (cf. Fig-
+ure 1). The fact description is represented as a
+text document, denoted by f . The judgment re-
+sults may include applicable law articles, charges,
+terms of penalty, etc. Assume there are t kinds
+of judgment results, and the i-th judgment result
+is represented as a categorical variable yi which
+takes value from set Yi. Then, a law case can be
+represented by a tuple (f, y1, . . . , yt).
+Law Articles. Law cases are often analyzed and
+adjudicated according to a legislature’s statutory
+law (also known as, written law). Formally, we
+denote the statutory law as a set of law articles
+L , {L1, . . . , Lm} where m is the number of law
+articles. Similar to the fact description of cases, we
+also represent each law article Li as a document.
+Legal Judgment Prediction. In this paper, we
+consider three kinds of judgment results: appli-
+cable law articles, charges, and terms of penalty.
+Given a training datasetD , {(f, y1, y2, y3)z}qz=1
+of size q, we aim to train a model F(·) that can
+predict the judgment results for any test law case
+with a fact description ftest, i.e., F(ftest,L) =
+(ŷ1, ŷ2, ŷ3), where ŷi ∈ Yi, i = 1, 2, 3. Follow-
+ing (Zhong et al., 2018; Yang et al., 2019), we as-
+sume each case has only one applicable law arti-
+cle.
+3089
+Graph Distillation Operator
+W
+Y Z
+X
+W
+Y Z
+X
+Graph 
+Construction 
+Layer
+Law-similarity Graphs
+...
+g1 gM
+...
+Adjacency matrices
+GDO GDOGDO
+Subgraph selection
+g2
+Law E
+Law G
+Law F
+Law Articles
+Fact Re-encode 
+Module
+Concat
+Law Distillation 
+Module
+y1
+y2
+y3
+Law Article Prediction
+Charge Predicton
+Term of Penalty 
+Prediction
+  
+ 
+  
+ 
+  
+ 
+Multi-task 
+Learning 
+Framework
+pooling
+...
+Fact 
+Description
+f
+Law W
+Law Y
+Law X
+Law Z
+β1 β2 βM
+Distinction vectors ...
+...
+a
+b
+Law A
+Law C
+Law B
+Law D
+Basic Encoder 
+Module
+Figure 4: a. Overview of our framework LADAN: it takes the fact descriptions of cases and the text definitions
+of law articles as inputs, then extracts the basic representation vbf and distinguishing representation v
+d
+f of the fact
+descriptions through the basic encoder and the re-encoder, and finally combines this two representations for the
+downstream prediction tasks; b. Law Distillation Module: this module communizes law articles and distills the
+distinguishable features of each community for attention calculation of the re-encoder.
+4 Our Method
+4.1 Overview
+In our framework LADAN (cf. Fig. 4a), the fact
+description of a case is represented by two parts: a
+basic representation, denoted by vbf , and a distin-
+guishable representation, denoted by vdf . The ba-
+sic representation vbf contains basic semantic in-
+formation for matching a group of law articles that
+may apply to the case. In contrast, the distinguish-
+able representation vdf captures features that can
+effectively distinguish confusing law articles. The
+concatenation of vbf and v
+d
+f is fed into subsequent
+classifiers to predict the labels of the JLP task.
+As we mentioned, it is easy to distinguish dis-
+similar law articles as sufficient distinctions ex-
+ist, and the difficulty in solving confusing charges
+lies in extracting distinguishable features of sim-
+ilar law articles. To obtain the basic representa-
+tion vbf , therefore, we use one of the popular docu-
+ment encoding methods (e.g., CNN encoder (Kim,
+2014) and Bi-RNN encoder (Yang et al., 2016)).
+To learn the distinguishable representation vdf , we
+use a law distillation module first to divide law ar-
+ticles to several communities to ensure that the law
+articles in each community are highly similar, and
+then extract each community i’s distinction vector
+(or, distinguishable features) βi from the basic rep-
+resentation of law articles in community i. Given
+the case’s fact description, from all communities’
+distinction vectors, we select the most relevant one
+(i.e., βĉ in Fig. 4(a)) for attentively extracting the
+distinguishable features vdf in the fact re-encode
+module. In the follows, we elaborate law distilla-
+tion module (Sec. 4.2) and fact re-encode module
+(Sec. 4.3) respectively.
+4.2 Distilling Law Articles
+A case might be misjudged due to the high similar-
+ity of some law articles. To alleviate this problem,
+we design a law distillation module (cf. Fig. 4 b)
+to extract distinguishable and representative infor-
+mation from all law articles. Specifically, it first
+uses a graph construction layer (GCL) to divide
+law articles into different communities. For each
+law article community, a graph distillation layer is
+applied to learn its discriminative representation,
+hereinafter, called distinction vector.
+4.2.1 Graph Construction Layer
+To find probably confusing law articles, we first
+construct a fully-connected graph G∗ for all law
+articles L, where the weight on the edge between
+a pair of law article Li, Lj ∈ L is defined as
+3090
+the cosine similarity between their TF-IDF (Ter-
+m Frequency-Inverse Document Frequency) rep-
+resentations tf idf i and tf idf j . Since confusing
+law articles are usually semantically similar and
+there exists sufficient information to distinguish
+dissimilar law articles, we remove the edges with
+weights less than a predefined threshold τ from
+graph G∗. By setting an appropriate τ , we ob-
+tain a new graph G = {gi}Mi=1 composed of sev-
+eral disconnected subgraphs g1, . . . , gM (or, com-
+munities), where each gi, i = 1, . . . ,M contains
+a specific community of probably confusing arti-
+cles. Our later experimental results demonstrate
+that this easy-to-implement method effectively im-
+proves the performance of LADAN.
+4.2.2 Graph Distillation Layer
+To extract the distinguishable information from
+each community gi, a straightforward way is to
+delete duplicate words and sentences presented in
+law articles within the community (as described
+in Sec. 1). In addition to introducing significant
+errors, this simple method cannot be plugged in-
+to end-to-end neural architectures due to its non-
+differentiability. To overcome the above issues,
+inspired by the popular graph convolution oper-
+ator (GCO) (Kipf and Welling, 2017; Hamilton
+et al., 2017; Veličković et al., 2017), we propose
+a graph distillation operator (GDO) to effectively
+extract distinguishable features. Different from G-
+CO, which computes the message propagation be-
+tween neighbors and aggregate these messages to
+enrich representations of nodes in the graph, the
+basic idea behind our GDO is to learn effective
+features with distinction by removing similar fea-
+tures between nodes.
+Specifically, for an arbitrary law article Li, G-
+DO uses a trainable weight matrix Ψ to capture
+similar information between it and its neighbors
+in graph G, and a matrix Φ to extract effective se-
+mantic features of Li. At each layer l ≥ 0, the ag-
+gregation of similar information between Li and
+its neighbors is removed from its representation,
+that is,
+v
+(l+1)
+Li
+= Φ(l)v
+(l)
+Li
+−
+∑
+Lj∈Ni
+Ψ(l)[v
+(l)
+Li
+,v
+(l)
+Lj
+]
+|Ni|
++ b(l)
+where v(l)Li ∈ R
+dl refers to the representation of
+law Li in the lth graph distillation layer, Ni refers
+to the neighbor set of Li in graph G, b(l) is the
+bias, and Φ(l) ∈ Rdl+1×dl and Ψ(l) ∈ Rdl+1×2dl
+are the trainable self weighted matrix and the
+neighbor similarity extracting matrix respectively.
+Note that dl is the dimension of the feature vector
+in the lth graph distillation layer. We set d0 = ds,
+where ds is the dimension of basic representations
+vbf and vLi . Similar to GCO, our GDO also sup-
+ports multi-layer stacking.
+Using GDO with H layers, we output law ar-
+ticle representation of the last layer, i.e., v(H)Li ∈
+RdH , which contains rich distinguishable features
+that can distinguish law article Li from the articles
+within the same community. To further improve
+law articles’ distinguishable features, for each sub-
+graph gi, i = 1, 2, . . . ,M in graph G, we compute
+its distinction vector βi by using pooling operators
+to aggregate the distinguishable features of articles
+in gi. Formally, βi is computed as:
+βi = [MaP({v(H)Li }Lj∈gi),MiP({v
+(H)
+Li
+}Lj∈gi)]
+where MaP(·) and MiP(·) are the element-wise
+max pooling and element-wise min pooling oper-
+ators respectively.
+4.3 Re-encoding Fact with Distinguishable
+Attention
+To capture a law case’s distinguishable features
+from its fact description f , we firstly define the
+following linear function, which is used to predict
+its most related community gĉ in graph G:
+X̂ = softmax(Wgvbf + bg) (1)
+where vbf is the basic representation of fact de-
+scription f , Wg ∈ RM×ds and bg ∈ RM are
+the trainable weight matrix and bias respectively.
+Each element X̂i ∈ X̂, i = 1, ...,M reflects the
+closeness between fact description f and law arti-
+cles community gi. The most relevant community
+gĉ is computed as
+ĉ = arg max
+i=1,...,M
+X̂i.
+Then, we use the corresponding community’s dis-
+tinction vector βĉ to attentively extract distin-
+guishable features from fact description f .
+Inspired by (Yang et al., 2016), we attentive-
+ly extract distinguishable features based on word-
+level and sentence-level Bi-directional Gated Re-
+current Units (Bi-GRUs). Specifically, for each in-
+put sentence Si = [wi,1, · · · , wi,ni ] in fact descrip-
+tion f , word-level Bi-GRUs will output a hidden
+3091
+state sequence, that is,
+hi,j = [
+−−→
+GRU(wi,j),
+←−−
+GRU(wi,j)], j = 1, ..., ni,
+where wi,j represents the word embedding of
+word wi.j and hi,j ∈ Rdw . Based on this hid-
+den state sequence and the distinction vector βĉ,
+we calculate an attentive vector [αi,1, . . . , αi,ni ],
+where each αi,j evaluates the discrimination abil-
+ity of word wi,j ∈ Si. αi,j is formally computed
+as:
+αi,j =
+exp(tanh(Wwhi,j)T(Wgwβĉ))∑
+j exp(tanh(Wwhi,j)T(Wgwβĉ))
+,
+where Ww and Wgw are trainable weight matri-
+ces. Then, we get a representation of sentence Si
+as:
+vsi =
+ni∑
+j=1
+αi,jhi,j ,
+where ni denotes the word number in sentence Si.
+By the above word-level Bi-GRUs, we
+get a sentence representations sequence
+[vs1 , . . . ,vsnf ], where nf refers to the num-
+ber of sentences in the fact description f . Based
+on this sequence, similarly, we build sentence-
+level Bi-GRUs and calculate a sentence-level
+attentive vector [α1, . . . , αnf ] that reflects the
+discrimination ability of each sentence, and
+then get the fact’s distinguishable representation
+vdf ∈ Rds . Our sentence-level Bi-GRUs are
+formulated as:
+hi = [
+−−→
+GRU(vsi),
+←−−
+GRU(vsi)], i = 1, 2, ..., nf ,
+αi =
+exp(tanh(Wshi)T(Wgsβĉ))∑
+i exp(tanh(Wshi)T(Wgsβĉ))
+,
+vdf =
+∑
+i
+αihi.
+4.4 Prediction and Training
+We concatenate the basic representation vbf and
+the distinguishable representation vdf as the final
+representation of fact description f , i.e., ṽf =
+[vbf ,v
+d
+f ]. Based on ṽf , we generate a correspond-
+ing feature vector ṽjf for each subtask tj , j =
+1, 2, 3 mentioned in Sec. 3, i.e., t1: law article
+prediction; t2: charge prediction; t3: term of
+penalty prediction. To obtain the prediction for
+each subtask, we use a linear classifier:
+ŷj = softmax(Wjpṽ
+j
+f + b
+j
+p),
+where Wjp and b
+j
+p are parameters specific to task
+tj . For training, we compute a cross-entropy loss
+function for each subtask and take the loss sum of
+all subtasks as the overall prediction loss:
+Lp = −
+3∑
+j=1
+|Yj |∑
+k=1
+yj,k log(ŷj,k),
+where |Yj | denotes the number of different class-
+es (or, labels) for task tj and [yj,1, yj,2, . . . , yj,|Yj |]
+refers to the ground-truth vector of task tj . Be-
+sides, we also consider the loss of law article com-
+munity prediction (i.e., Eq. 1):
+Lc = −λ
+M∑
+j=1
+Xj log(X̂j),
+where [X1, X2, . . . , XM ] is the ground-truth vec-
+tor of the community including the correct law ar-
+ticle applied to the law case. In summary, our final
+overall loss function is:
+L = Lp + Lc (2)
+5 Experiments
+5.1 Datasets
+To evaluate the performance of our method, we
+use the publicly available datasets of the Chinese
+AI and Law challenge (CAIL2018)1 (Xiao et al.,
+2018): CAIL-small (the exercise stage dataset) and
+CAIL-big (the first stage dataset). The case sam-
+ples in both datasets contain fact description, ap-
+plicable law articles, charges, and the terms of
+penalty. For data processing, we first filter out
+samples with fewer than 10 meaningful words. To
+be consistent with state-of-the-art methods, we fil-
+ter out the case samples with multiple applicable
+law articles and multiple charges. Meanwhile, re-
+ferring to (Zhong et al., 2018), we only keep the
+law articles and charges that apply to not less than
+100 corresponding case samples and divide the
+terms of penalty into non-overlapping intervals.
+The detailed statistics of the datasets are shown in
+Table 1.
+5.2 Baselines and Settings
+Baselines. We compare LADAN with some
+baselines, including:
+1http://cail.cipsc.org.cn/index.html
+3092
+Dataset CAIL-small CAIL-big
+#Training Set Cases 101,619 1,587,979
+#Test Set Cases 26,749 185,120
+#Law Articles 103 118
+#Charges 119 130
+#Term of Penalty 11 11
+Table 1: Statistics of datasets.
+• CNN (Kim, 2014): a CNN-based model with
+multiple filter window widths for text classi-
+fication.
+• HARNN (Yang et al., 2016): an RNN-based
+neural network with a hierarchical attention
+mechanism for document classification.
+• FLA (Luo et al., 2017): a charge prediction
+method that uses an attention mechanism to
+capture the interaction between fact descrip-
+tion and applicable laws.
+• Few-Shot (Hu et al., 2018): a discriminating
+confusing charge method, which extracts fea-
+tures about ten predefined attributes from fact
+descriptions to enforce semantic information.
+• TOPJUDGE (Zhong et al., 2018): a topo-
+logical multi-task learning framework for
+LJP, which formalizes the explicit dependen-
+cies over subtasks in a directed acyclic graph.
+• MPBFN-WCA (Yang et al., 2019): a multi-
+task learning framework for LJP with multi-
+perspective forward prediction and back-
+ward verification, which is the state-of-the-
+art method.
+Similar to existing works (Luo et al., 2017;
+Zhong et al., 2018), we train the baselines CNN,
+HLSTM and FLA using a multi-task framework
+(recorded as MTL) and select a set of the best
+experimental parameters according to the range
+of the parameters given in their original paper-
+s. Besides, we use our method LADAN with the
+same multi-task framework (i.e., Landan+MTL,
+LADAN+TOPJUDGE, and LADAN+MPBFN) to
+demonstrate our superiority in feature extraction.
+Experimental Settings. We use the THU-
+LAC (Sun et al., 2016) tool to get the word seg-
+mentation because all case samples are in Chi-
+nese. Afterward, we use the Skip-Gram mod-
+el (Mikolov et al., 2013) to pre-train word embed-
+dings on these case documents, where the mod-
+el’s embedding size and frequency threshold are
+set to 200 and 25 respectively. Meanwhile, we
+set the maximum document length as 512 word-
+s for CNN-based models in baselines and set the
+maximum sentence length to 100 words and max-
+imum document length to 15 sentences for LSTM-
+based models. As for hyperparameters setting, we
+set the dimension of all latent states (i.e., dw, ds,
+dl and df ) as 256 and the threshold τ as 0.3. In
+our method LADAN, we use two graph distilla-
+tion layers, and a Bi-GRU with a randomly ini-
+tialized attention vector u is adopted as the basic
+document encoder. For training, we set the learn-
+ing rate of Adam optimizer to 10−3, and the batch
+size to 128. After training every model for 16 e-
+pochs, we choose the best model on the validation
+set for testing.2
+5.3 Experimental Results
+To compare the performance of the baselines
+and our methods, we choose four metrics that
+are widely used for multi-classification tasks, in-
+cluding accuracy (Acc.), macro-precision (MP),
+macro-recall (MR), and macro-F1 (F1). Since
+the problem of confusing charges often occurs be-
+tween a few categories, the main metric is the
+F1 score. Tables 2 and 3 show the experimen-
+tal results on datasets CAIL-small and CAIL-big,
+respectively. Our method LADAN performs the
+best in terms of all evaluation metrics. Because
+both CAIL-small and CAIL-big are imbalanced
+datasets, we focus on comparing the F1-score,
+which more objectively reflects the effectiveness
+of our LADAN and other baselines. Compared
+with the state-of-the-art MPBFN-WCA, LADAN
+improved the F1-scores of law article prediction,
+charge prediction, and term of penalty predic-
+tion on dataset CAIL-small by 2.02%, 2.42% and
+4.20% respectively, and about 3.18%, 1.44% and
+5.79% on dataset CAIL-big. Meanwhile, the com-
+parison under the same multi-task framework (i.e.,
+MTL, TOPJUDGE, and MPBFN) shows that our
+LADAN extracted more effective features from
+fact descriptions than all baselines. Meanwhile,
+we can observe that the performance of Few-shot
+on charge prediction is close to LADAN, but it-
+s performance on the term of penalty prediction
+is far from ideal. It is because the ten predefined
+attributes of Few-Shot are only effective for iden-
+tifying charges, which also proves the robustness
+2Our source codes are available at https://github.
+com/prometheusXN/LADAN
+3093
+Tasks Law Articles Charges Term of Penalty
+Metrics Acc. MP MR F1 Acc. MP MR F1 Acc. MP MR F1
+FLA+MTL 77.74 75.32 74.36 72.93 80.90 79.25 77.61 76.94 36.48 30.94 28.40 28.00
+CNN+MTL 78.71 76.02 74.87 73.79 82.41 81.51 79.34 79.61 35.40 33.07 29.26 29.86
+HARNN+MTL 79.79 75.26 76.79 74.90 83.80 82.44 82.78 82.12 36.17 34.66 31.26 31.40
+Few-Shot+MTL 79.30 77.80 77.59 76.09 83.65 80.84 82.01 81.55 36.52 35.07 26.88 27.14
+TOPJUDGE 79.88 79.77 73.67 73.60 82.10 83.60 78.42 79.05 36.29 34.73 32.73 29.43
+MPBFN-WCA 79.12 76.30 76.02 74.78 82.14 82.28 80.72 80.72 36.02 31.94 28.60 29.85
+LADAN+MTL 81.20 78.24 77.38 76.47 85.07 83.42 82.52 82.74 38.29 36.16 32.49 32.65
+LADAN+TOPJUDGE 81.53 78.62 78.29 77.10 85.12 83.64 83.57 83.14 38.34 36.39 32.75 33.53
+LADAN+MPBFN 82.34 78.79 77.59 76.80 84.83 83.33 82.80 82.85 39.35 36.94 33.25 34.05
+Table 2: Judgment prediction results on CAIL-small.
+Tasks Law Articles Charges Term of Penalty
+Metrics Acc. MP MR F1 Acc. MP MR F1 Acc. MP MR F1
+FLA+MTL 93.23 72.78 64.30 66.56 92.76 76.35 68.48 70.74 57.63 48.93 45.00 46.54
+CNN+MTL 95.84 83.20 75.31 77.47 95.74 86.49 79.00 81.37 55.43 45.13 38.85 39.89
+HARNN+MTL 95.63 81.48 74.57 77.13 95.58 85.59 79.55 81.88 57.38 43.50 40.79 42.00
+Few-Shot+MTL 96.12 85.43 80.07 81.49 96.04 88.30 80.46 83.88 57.84 47.27 42.55 43.44
+TOPJUDGE 95.85 84.84 74.53 77.50 95.78 86.46 78.51 81.33 57.34 47.32 42.77 44.05
+MPBFN-WCA 96.06 85.25 74.82 78.36 95.98 89.16 79.73 83.20 58.14 45.86 39.07 41.39
+LADAN+MTL 96.57 86.22 80.78 82.36 96.45 88.51 83.73 85.35 59.66 51.78 45.34 46.93
+LADAN+TOPJUDGE 96.62 86.53 79.08 81.54 96.39 88.49 82.28 84.64 59.70 51.06 45.46 46.96
+LADAN+MPBFN 96.60 86.42 80.37 81.98 96.42 88.45 83.08 84.95 59.85 51.75 45.59 47.18
+Table 3: Judgment prediction results on CAIL-big.
+of our LADAN. The highest MP- and MR-scores
+of LADAN also demonstrates its ability to distin-
+guish confusing law articles. Note that all method-
+s’ performance on dataset CAIL-big is better than
+that on CAIL-small, which is because the training
+set on CAIL-big is more adequate.
+5.4 Ablation Experiments
+To further illustrate the significance of considering
+the difference between law articles, we conduct-
+ed ablation experiments on model LADAN+MTL
+with dataset CAIL-small. To prove the effective-
+ness of our graph construction layer (GCL), we
+build a LADAN model with the GCL’s remov-
+ing threshold τ = 0 (i.e., “-no GCL” in Table
+4), which directly applies the GDO on the fully-
+connected graph G∗ to generate a global distinc-
+tion vector βg for re-encoding the fact description.
+To verify the effectiveness of our graph distillation
+operator (GDO), we build a no-GDO LADAN
+model (i.e., “-no GDO” in Table 4), which direct-
+ly pools each subgraph gi to a distinction vector
+βi without GDOs. To evaluate the importance of
+considering the difference among law articles, we
+remove both GCL and GDO from LADAN by set-
+ting τ = 1.0 (i.e., “-no both” in Table 4), i.e.,
+each law article independently extracts the atten-
+tive feature from fact description. In Table 4, we
+Tasks Law Charge Penalty
+Metrics Acc. F1 Acc. F1 Acc. F1
+LADAN+MTL 81.20 76.47 85.07 83.14 38.29 32.65
+-no GCL 80.46 75.98 84.04 82.33 37.80 31.85
+-no GDO 80.82 76.19 84.65 82.50 36.69 31.62
+-no both 79.79 74.97 83.72 82.02 34.87 31.34
+Table 4: Ablation analysis on CAIL-small.
+see that both GCL and GDO effectively improve
+the performance of LADAN. GCL is more crit-
+ical than GDO because GDO has a limited per-
+formance when the law article communities ob-
+tained by GCL are not accurate. When remov-
+ing both GCL and GDO, the accuracy of LADAN
+decreases to that of HARNN+MTL, which power-
+fully demonstrates the effectiveness of our method
+exploiting differences among similar law articles.
+5.5 Case Study
+To intuitively verify that LADAN effectively ex-
+tracts distinguishable features, we visualize the at-
+tention of LADAN’s encoders. Figure 5 shows t-
+wo law case examples, each for Article 385 and
+Article 163, respectively, where the darker the
+word is, the higher the attention weight it gets in
+the corresponding encoder, i.e., its information is
+more important to the encoder. For the basic en-
+coder, we see that the vital information in these
+two cases is very similar, which both contain the
+3094
+Fact Re-encoder:
+Basic Encoder:
+Case example of Law Article 163：
+Bribery crime of non-state emplotees
+Basic Encoder:
+Case example of Law Article 185：
+Crimeof acceptance of bribes
+Fact Re-encoder:
+Figure 5: The attention visualization on case examples for Article 185 and Article 163.
+word like “use position” “accept benefit” “accept
+... cash”, etc. Therefore, when using just the rep-
+resentation of basic encoder to predict acceptable
+law articles, charges and terms of penalty, these t-
+wo cases tend to be misjudged. As we mentioned
+in Sec. 4.3, with the distinction vector, our fact re-
+encoder focuses on extracting distinguishable fea-
+tures like defendants’ identity information (e.g.,
+“company manager” “working in the Cadastral
+Unit of Luocheng Branch of Luohe City Land and
+Resources Bureau” in our examples), which effec-
+tively distinguish the applicable law articles and
+charges of these two cases.
+6 Conclusion
+In this paper, we present an end-to-end model,
+LADAN, to solve the issue of confusing charges
+in LJP. In LADAN, a novel attention mechanis-
+m is proposed to extract the key features for dis-
+tinguishing confusing law articles attentively. Our
+attention mechanism not only considers the inter-
+action between fact description and law articles
+but also the differences among similar law articles,
+which are effectively extracted by a graph neural
+network GDL proposed in this paper. The experi-
+mental results on real-world datasets show that our
+LADAN raises the F1-score of state-of-the-art by
+up to 5.79%. In the future, we plan to study com-
+plicated situations such as a law case with multiple
+defendants and charges.
+Acknowledgments
+The research presented in this paper is supported
+in part by National Key R&D Program of Chi-
+na (2018YFC0830500),Shenzhen Basic Research
+Grant (JCYJ20170816100819428), National Nat-
+ural Science Foundation of China (61922067,
+U1736205, 61902305), MoE-CMCC “Artifical
+Intelligence” Project (MCM20190701), National
+Science Basic Research Plan in Shaanxi Province
+of China (2019JM-159), National Science Ba-
+sic Research Plan in Zhejiang Province of China
+(LGG18F020016).
+References
+Stephen Bonner, Ibad Kureshi, John Brennan, Georgios
+Theodoropoulos, Andrew Stephen McGough, and
+Boguslaw Obara. 2019. Exploring the semantic con-
+tent of unsupervised graph embeddings: an empiri-
+cal study. Data Science and Engineering, 4(3):269–
+289.
+Justin Gilmer, Samuel S Schoenholz, Patrick F Riley,
+Oriol Vinyals, and George E Dahl. 2017. Neural
+message passing for quantum chemistry. In ICML.
+Will Hamilton, Zhitao Ying, and Jure Leskovec. 2017.
+Inductive representation learning on large graphs. In
+NeurIPS.
+Zikun Hu, Xiang Li, Cunchao Tu, Zhiyuan Liu, and
+Maosong Sun. 2018. Few-shot charge prediction
+with discriminative legal attributes. In COLING.
+R Keown. 1980. Mathematical models for legal pre-
+diction. Computer/lj, 2:829.
+Yoon Kim. 2014. Convolutional neural networks for
+sentence classification. In EMNLP.
+Thomas N Kipf and Max Welling. 2017. Semi-
+supervised classification with graph convolutional
+networks. In ICML.
+Fred Kort. 1957. Predicting supreme court decisions
+mathematically: A quantitative analysis of the “right
+to counsel” cases. American Political Science Re-
+view, 51(1):1–12.
+3095
+Benjamin E Lauderdale and Tom S Clark. 2012. The
+supreme court’s many median justices. American
+Political Science Review, 106(4):847–866.
+Qimai Li, Zhichao Han, and Xiao-Ming Wu. 2018.
+Deeper insights into graph convolutional networks
+for semi-supervised learning. In AAAI.
+Wan-Chen Lin, Tsung-Ting Kuo, Tung-Jia Chang,
+Chueh-An Yen, Chao-Ju Chen, and Shou-de Lin.
+2012. Exploiting machine learning models for chi-
+nese legal documents labeling, case classification,
+and sentencing prediction. Processdings of RO-
+CLING.
+Chao-Lin Liu, Cheng-Tsung Chang, and Jim-How Ho.
+2004. Case instance generation and refinement for
+case-based criminal summary judgments in chinese.
+Bingfeng Luo, Yansong Feng, Jianbo Xu, Xiang
+Zhang, and Dongyan Zhao. 2017. Learning to pre-
+dict charges for criminal cases with legal basis. arX-
+iv preprint arXiv:1707.09168.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Cor-
+rado, and Jeff Dean. 2013. Distributed representa-
+tions of words and phrases and their compositional-
+ity. In NeurIPS.
+Stuart S Nagel. 1963. Applying correlation analysis to
+case prediction. Tex. L. Rev., 42:1006.
+Octavia-Maria Sulea, Marcos Zampieri, Shervin Mal-
+masi, Mihaela Vela, Liviu P Dinu, and Josef van
+Genabith. 2017. Exploring the use of text classi-
+fication in the legal domain. arXiv preprint arX-
+iv:1710.09306.
+Maosong Sun, Xinxiong Chen, Kaixu Zhang, Zhipeng
+Guo, and Zhiyuan Liu. 2016. Thulac: An efficient
+lexical analyzer for chinese.
+Petar Veličković, Guillem Cucurull, Arantxa Casano-
+va, Adriana Romero, Pietro Lio, and Yoshua Ben-
+gio. 2017. Graph attention networks. arXiv preprint
+arXiv:1710.10903.
+Chaojun Xiao, Haoxi Zhong, Zhipeng Guo, Cunchao
+Tu, Zhiyuan Liu, Maosong Sun, Yansong Feng, X-
+ianpei Han, Zhen Hu, Heng Wang, et al. 2018.
+Cail2018: A large-scale legal dataset for judgment
+prediction. arXiv preprint arXiv:1807.02478.
+Nuo Xu, Pinghui Wang, Long Chen, Jing Tao, and Jun-
+zhou Zhao. 2019. Mr-gnn: Multi-resolution and d-
+ual graph neural network for predicting structured
+entity interactions. In IJCAI.
+Wenmian Yang, Weijia Jia, XIaojie Zhou, and Yutao
+Luo. 2019. Legal judgment prediction via multi-
+perspective bi-feedback network. arXiv preprint
+arXiv:1905.03969.
+Zichao Yang, Diyi Yang, Chris Dyer, Xiaodong He,
+Alex Smola, and Eduard Hovy. 2016. Hierarchical
+attention networks for document classification. In
+NAACL.
+Haoxi Zhong, Guo Zhipeng, Cunchao Tu, Chaojun X-
+iao, Zhiyuan Liu, and Maosong Sun. 2018. Le-
+gal judgment prediction via topological learning. In
+EMNLP.

@@ -1,0 +1,1301 @@
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 5657–5667
+July 5 - 10, 2020. c©2020 Association for Computational Linguistics
+5657
+Probabilistic Assumptions Matter: Improved Models for
+Distantly-Supervised Document-Level Question Answering
+Hao Cheng∗, Ming-Wei Chang†, Kenton Lee†, Kristina Toutanova†
+∗Microsoft Research
+chehao@microsoft.com
+†Google Research
+{mingweichang, kentonl, kristout}@google.com
+Abstract
+We address the problem of extractive question
+answering using document-level distant super-
+vision, pairing questions and relevant docu-
+ments with answer strings. We compare previ-
+ously used probability space and distant super-
+vision assumptions (assumptions on the corre-
+spondence between the weak answer string la-
+bels and possible answer mention spans). We
+show that these assumptions interact, and that
+different configurations provide complemen-
+tary benefits. We demonstrate that a multi-
+objective model can efficiently combine the
+advantages of multiple assumptions and out-
+perform the best individual formulation. Our
+approach outperforms previous state-of-the-art
+models by 4.3 points in F1 on TriviaQA-Wiki
+and 1.7 points in Rouge-L on NarrativeQA
+summaries.1
+1 Introduction
+Distant supervision assumptions have enabled the
+creation of large-scale datasets that can be used
+to train fine-grained extractive short answer ques-
+tion answering (QA) systems. One example is
+TriviaQA (Joshi et al., 2017). There the au-
+thors utilized a pre-existing set of Trivia question-
+answer string pairs and coupled them with rele-
+vant documents, such that, with high likelihood,
+the documents support answering the questions
+(see Fig. 1 for an illustration). Another example
+is the NarrativeQA dataset (Kočiský et al., 2018),
+where crowd-sourced abstractive answer strings
+were used to weakly supervise answer mentions
+in the text of movie scripts or their summaries. In
+this work, we focus on the setting of document-
+level extractive QA, where distant supervision is
+specified as a set A of answer strings for an input
+question-document pair.
+1Based on the TriviaQA-Wiki leaderboard, our approach
+was the SOTA when this work was submitted on Dec 04,
+2019.
+Question: How is Joan Molinsky better known?
+Answer:    Joan Rivers
+: { Joan Rivers, Diary of a Mad Diva } 
+P1: Joan Alexandra Molinsky, known professionally as Joan Rivers, 
+was an American comedian, actress, writer, producer, and television 
+host.  … Joan Rivers was strongly influenced by Lenny Bruce. …
+P2: … She received a Grammy Award for Best Spoken Word Album for 
+her book, Diary of a Mad Diva. …
+P3: Joan Alexandra Molinsky was born on June 8, 1933, in Brooklyn, 
+New York. … Before entering show business, she chose Joan Rivers as 
+her stage name. …
+Question: Where do the dancers purify themselves?
+Answer:    in the spring at mount helicon  mount helicon
+: { in the spring at mount helicon, mount helicon } 
+P1: The play begins with three pages … 
+P2: The courtiers … She sentences them to make reparation and to 
+purify themselves by bathing in the spring at mount helicon. The 
+figure of Actaeon in the play may represent ...
+TriviaQA
+NarrativeQA
+Figure 1: TriviaQA and NarrativeQA examples. In the Triv-
+iaQA example, there are three occurrences of the original an-
+swer string “Joan Rivers” (blue), and one alternate but incor-
+rect alias “Diary of a Mad Diva” (purple). Only two “Joan
+Rivers” mentions (shown in blue boxes) support answering
+the question. In the NarrativeQA example, there are two an-
+swer stings in A: “in the spring at mount helicon” (blue) and
+“mount helicon” (orange), with the latter being a substring of
+the former. Both mentions in P2 are correct answer spans.
+Depending on the data generation process, the
+properties of the resulting supervision from the
+sets A may differ. For example, the provided an-
+swer sets in TriviaQA include aliases of original
+trivia question answers, aimed at capturing seman-
+tically equivalent answers but liable to introducing
+semantic drift. In Fig. 1, the possible answer string
+“Diary of a Mad Diva” is related to “Joan Rivers”,
+but is not a valid answer for the given question.
+On the other hand, the sets of answer strings in
+NarrativeQA are mostly valid since they have high
+overlap with human-generated answers for the
+given question/document pair. As shown in Fig. 1,
+“in the spring at mount helicon” and “mount he-
+licon” are both valid answers with relevant men-
+tions. In this case, the annotators chose answers
+5658
+that appear verbatim in the text but in the more
+general case, noise may come from partial phrases
+and irrelevant mentions.
+While distant supervision reduces the annota-
+tion cost, increased coverage often comes with
+increased noise (e.g., expanding entity answer
+strings with aliases improves coverage but also in-
+creases noise). Even for fixed document-level dis-
+tant supervision in the form of a set of answers A,
+different interpretations of the partial supervision
+lead to different points in the coverage/noise space
+and their relative performance is not well under-
+stood.
+This work systematically studies methods for
+learning and inference with document-level dis-
+tantly supervised extractive QA models. Using a
+BERT (Devlin et al., 2019) joint question-passage
+encoder, we study the compound impact of:
+• Probability space (§2): ways to define the
+model’s probability space based on independent
+paragraphs or whole documents.
+• Distant supervision assumptions (§3): ways to
+translate the supervision from possible stringsA
+to possible locations of answer mentions in the
+document.
+• Optimization and inference (§4): ways to
+define corresponding training objectives (e.g.
+Hard EM as in Min et al. (2019) vs. Maxi-
+mum Marginal Likelihood) and make answer
+string predictions during inference (Viterbi or
+marginal inference).
+We show that the choice of probability space
+puts constraints on the distant supervision as-
+sumptions that can be captured, and that all three
+choices interact, leading to large differences in
+performance. Specifically, we provide a frame-
+work for understanding different distant supervi-
+sion assumptions and the corresponding trade-off
+among the coverage, quality and strength of dis-
+tant supervision signal. The best configuration de-
+pends on the properties of the possible annotations
+A and is thus data-dependent. Compared with re-
+cent work also using BERT representations, our
+study show that the model with most suitable prob-
+abilistic treatment achieves large improvements of
+4.6 F1 on TriviaQA and 1.7 Rouge-L on Narra-
+tiveQA respectively. Additionally, we design an
+efficient multi-loss objective that can combine the
+benefits of different formulations, leading to sig-
+nificant improvements in accuracy, surpassing the
+best previously reported results on the two studied
+BERT
+…
+𝒑𝟏𝒒
+(“Joan Rivers”| 𝒑𝟏)
+Begin and End
+Probabilities 
+(𝑷𝒃, 𝑷𝒆)
+(“Joan Rivers”| 𝒑𝟑)
+…
+…
+…
+Span 
+Probabilities
+(𝑷𝒔)
+String 
+Probabilities 
+(𝑷𝒂)
+𝑷𝒂(“Joan Rivers”)
+…
+𝑷𝒂(“Diary of a Mad Diva”)
+Contextualized 
+Representation
+𝚵 𝚵
+BERT
+𝒑𝟑𝒒 ……
+…
+Figure 2: The document-level QA model as used for
+test-time inference. The lower part is a BERT-based
+paragraph-level answer scoring component, and the up-
+per part illustrates the probability aggregation across
+answer spans sharing the same answer string. Ξ refers
+to either a sum or a max operator. In the given example,
+“John Rivers” is derived from two paragraphs.
+tasks. Results are further strengthened by transfer
+learning from fully labeled short-answer extrac-
+tion data in SQuAD 2.0 (Rajpurkar et al., 2018),
+leading to a final state-of-the-art performance of
+76.3 F1 on TriviaQA-Wiki and 62.9 on the Narra-
+tiveQA summaries task.2
+2 Probability Space
+Here, we first formalize both paragraph-level and
+document-level models, which have been previ-
+ously used for document-level extractive QA. Typ-
+ically, paragraph-level models consider each para-
+graph in the document independently, whereas
+document models integrate some dependencies
+among paragraphs.
+To define the model, we need to specify the
+probability space, consisting of a set of possible
+outcomes and a way to assign probabilities to in-
+dividual outcomes. For extractive QA, the proba-
+bility space outcomes consist of token positions of
+answer mention spans.
+The overall model architecture is shown in
+Fig. 2. We use BERT (Devlin et al., 2019) to
+derive representations of document tokens. As
+is standard in state-of-the-art extractive QA mod-
+els (Devlin et al., 2019; Lee et al., 2019; Min
+et al., 2019), the BERT model is used to encode
+a pair of a given question with one paragraph
+from a given document into neural text represen-
+tations. These representations are then used to
+2The code is available at https://github.com/
+hao-cheng/ds_doc_qa
+5659
+define scores/probabilities of possible answer be-
+gin and end positions, which are in turn used to
+define probabilities over possible answer spans.
+Then the answer string probabilities can be de-
+fined as the aggregation over all possible answer
+spans/mentions.
+In the following, we show that paragraph-level
+and document-level models differ only in the
+space of possible outcomes and the way of com-
+puting answer span probabilities from answer po-
+sition begin and end scores.
+Scoring answer begin and end positions Given
+a question q and a document d consisting of
+K paragraphs p1, . . . , pK , the BERT encoder
+produces contextualized representations for each
+question-paragraph pair (q, pk). Specifically, for
+each token position ik in pk, the final hidden vec-
+tor h(i,k) ∈ Rd is used as the contextualized token
+embedding, where d is the vector dimension.
+The span-begin score is computed as sb(ik) =
+wTb h
+(i,k) using a weight vector wb ∈ Rd. The
+span-end score se(jk) is defined in the same way.
+The probabilities for a start position ik and an end
+position jk are
+Pb(i
+k) =
+exp(sb(i
+k))
+Zb
+, (1)
+Pe(j
+k) =
+exp(se(j
+k))
+Ze
+, (2)
+where Zb, Ze are normalizing factors, depending
+on the probability space definition (detailed be-
+low). The probability of an answer span from ik
+to jk is defined as Ps(ik, jk) = Pb(ik)Pe(jk).
+The partition functions Zb and Ze depend on
+whether we use a paragraph-level or document-
+level probability space.
+Paragraph-level model In paragraph level
+models, we assume that for a given question
+against a document d, each of its paragraphs
+p1, . . . , pK independently selects a pair of answer
+positions (ik, jk), which are the begin and end
+of the answer from paragraph pk. In the case
+that pk does not support answering the question
+q, special NULL positions are selected (follow-
+ing the SQuAD 2.0 BERT implementation3).
+Thus, the set of possible outcomes Ω in the
+paragraph-level probability space is the set of
+lists of begin/end position pairs, one from each
+paragraph: {[(i1, j1), . . . , (iK , jK)]}, where ik
+3https://github.com/google-research/bert
+and jk range over positions in the respective
+paragraphs.
+The answer positions in different paragraphs
+are independent, and the probability of each para-
+graph’s answer begin and end is computed by nor-
+malizing over all possible positions in that para-
+graph, i.e.,
+Zkb =
+∑
+i∈Ik∪{NULL}
+exp(sb(i)), (3)
+Zke =
+∑
+j∈Ik∪{NULL}
+exp(se(j)), (4)
+where Ik is the set of all positions in the para-
+graph pk. The probability of an answer begin at
+ik is Pb(ik) = exp(sb(ik))/Zbk and the prob-
+ability of an end at jk is defined analogously.
+The probability of a possible answer position as-
+signment for the document d is then defined as
+P ([(i1, j1), . . . , (iK , jK)]) =
+∏
+k Pb(i
+k)Pe(j
+k).
+As we can see from the above definition, due
+to the independence assumption, models using
+paragraph-level normalization do not learn to di-
+rectly calibrate candidate answers from different
+paragraphs against each other.
+Document-level model In document-level mod-
+els, we assume that for a given question against
+document d, a single answer span is selected
+(as opposed to one for each paragraph in the
+paragraph-level models).4 Here, the possible posi-
+tions in all paragraphs are a part of a joint probabil-
+ity space and directly compete against each other.
+In this case, Ω is the set of token spans {(i, j)},
+where i and j are the begin and end positions of
+the selected answer. The normalizing factors are
+therefore aggregated over all paragraphs, i.e.,
+Z∗b =
+K∑
+k=1
+∑
+i∈Ik
+exp(sb(i)), (5)
+Z∗e =
+K∑
+k=1
+∑
+j∈Ik
+exp(se(j)). (6)
+Compared with (3) and (4), since there is always a
+valid answer in the document for the tasks stud-
+ied here, NULL is not necessary for document-
+level models and thus can be excluded from the
+4In this paper, we focus on datasets where the document
+is known to contain a valid answer. It is straightforward to
+remove this assumption and consider document-level NULL
+for future work.
+5660
+Coverage Quality Strength
+H1 ↗ ↘ ↗
+H2 −→ −→ −→
+H3 ↘ ↗ ↘
+Table 1: Distant supervision assumptions and their cor-
+responding tradeoffs. (↗) indicates highest value, (→)
+medium, and (↘) lowest value.
+inner summation of (5) and (6). The probabil-
+ity of a possible outcome, i.e. an answer span, is
+P (i, j) = exp(sb(i) + se(j))/(Z
+∗
+bZ
+∗
+e ).
+3 Distant Supervision Assumptions
+There are multiple ways to interpret the distant su-
+pervision signal from A as possible outcomes in
+our paragraph-level and document-level probabil-
+ity spaces, leading to corresponding training loss
+functions. Although several different paragraph-
+level and document-level losses (Chen et al., 2017;
+Kadlec et al., 2016; Clark and Gardner, 2018; Lin
+et al., 2018; Min et al., 2019) have been studied in
+the literature, we want to point out that when in-
+terpreting the distant supervision signal, there is a
+tradeoff among multiple desiderata:
+• Coverage: maximize the number of instances
+of relevant answer spans, which we can use to
+provide positive examples to our model.
+• Quality: maximize the quality of annotations
+by minimizing noise from irrelevant answer
+strings or mentions.
+• Strength: maximize the strength of the signal
+by reducing uncertainty and pointing the model
+more directly at correct answer mentions.
+We introduce three assumptions (H1, H2, H3)
+for how the distant supervision signal should be in-
+terpreted, which lead to different tradeoffs among
+the desiderata above (see Table 1).
+We begin with setting up additional useful nota-
+tion. Given a document-question pair (d, q) and
+a set of answer strings A, we define the set of
+A-consistent token spans YA in d as follows: for
+each paragraph pk, span (ik, jk) ∈ YkA if and only
+if the string spanning these positions in the para-
+graph is in A. For paragraph-level models, if for
+paragraph pk the set YkA is empty, we redefine YkA
+to be {NULL}. Similarly, we define the set of A-
+consistent begin positions Ykb,A as the start posi-
+tions of consistent spans: Ykb,A = ∪(i,j)∈YkA{i}.
+Yke,A for A-consistent end positions is defined
+analogously. In addition, we term an answer span
+(i, j) correct for question q, if its corresponding
+answer string is a correct answer to q, and the con-
+text of the specific mention of that answer string
+from positions i to j entails this answer. Similarly,
+we term an answer begin/end position correct if
+there exists a correct answer span starting/ending
+at that position.
+H1: All A-consistent answer spans are correct.
+While this assumption is evidently often incorrect
+(low on the quality dimension ↘), especially for
+TriviaQA, as seen from Fig. 1, it provides a large
+number of positive examples and a strong supervi-
+sion signal (high on coverage↗ and strength↗).
+We include this in our study for completeness.
+H1 translates differently into possible outcomes
+for corresponding models depending on the prob-
+ability space (paragraph or document). Paragraph-
+level models select multiple answer spans, one for
+each paragraph, to form a possible outcome. Thus,
+multiple A-consistent answer spans can occur in
+a single outcome, as long as they are in differ-
+ent paragraphs. For multiple A-consistent answer
+spans in the same paragraph, these can be seen as
+mentions that can be selected with equal probabil-
+ity (e.g., by different annotators). Document-level
+models select a single answer span in the docu-
+ment and therefore multiple A-consistent answer
+spans can be seen as occurring in separate anno-
+tation events. Table 2 shows in row one the log-
+probability of outcomes consistent with H1.
+H2: Every positive paragraph has a correct an-
+swer in its A-consistent set. Under this assump-
+tion, each paragraph with a non-empty set of A-
+consistent spans (termed a positive paragraph) has
+a correct answer. As we can see from the Trivi-
+aQA example in Fig. 1, this assumption is correct
+for the first and third paragraph, but not the sec-
+ond one, as it only contains a mention of a noisy
+answer alias. This assumption has medium cov-
+erage (→), as it generates positive examples from
+multiple paragraphs but does not allow multiple
+positive mentions in the same paragraph. It also
+decreases noise (higher quality→) (e.g. does not
+claim that all the mentions of “Joan Rivers” in the
+first paragraph support answering the question).
+The strength of the supervision signal is weakened
+(→) relative to H1, as now the model needs to fig-
+ure out which of the multiple A-consistent men-
+tions in each paragraph is correct.
+H2 has two variations: correct span, assuming
+5661
+Span-Based Position-Based
+H1
+∑
+k∈K
+∑
+(ik,jk)∈YkA
+logPs(i
+k, jk)
+∑
+k∈K
+∑
+ik∈Ykb,A
+logPb(i
+k) +
+∑
+k∈K
+∑
+jk∈Yke,A
+logPe(j
+k)
+H2
+∑
+k∈K log Ξ(ik,jk)∈YkA
+Ps(i
+k, jk)
+∑
+k∈K log Ξik∈Ykb,A
+Pb(i
+k) +
+∑
+k∈K log Ξjk∈Yke,A
+Pe(j
+k)
+H3 log Ξk∈KΞ(ik,jk)∈YkA
+Ps(i
+k, jk) log Ξk∈KΞik∈Ykb,A
+Pb(i
+k) + log Ξk∈KΞjk∈Yke,A
+Pe(j
+k)
+Table 2: Objective functions for a document-question pair (d, q) under different distant supervision assumptions.
+Ξ refers to
+∑
+and max for MML and HardEM, respectively.
+that one of the answer spans (ik, jk) in YkA is cor-
+rect, and correct position, assuming that the para-
+graph has a correct answer begin position from
+Ykb,A and a correct answer end position from Yke,A,
+but its selected answer span may not necessarily
+belong to YkA. For example, if A contains {abcd,
+bc}, then abc would have correct begin and end,
+but not be a correct span. It does not make sense
+for modeling to assume the paragraph has correct
+begin and end positions instead of a correct an-
+swer span (i.e., we don’t really want to get in-
+consistent answers like abc above), but given that
+our probabilistic model assumes independence of
+begin and end answer positions, it may not be
+able to learn well with span-level weak supervi-
+sion. Some prior work (Clark and Gardner, 2018)
+uses an H2 position-based distant supervision as-
+sumption with a pair-paragraph model akin to our
+document-level ones. Lin et al. (2018) use an H2
+span-based distant supervision assumption. The
+impact of position vs. span-based modeling of the
+distant supervision is not well understood. As we
+will see in the experiments, for the majority of set-
+tings, position-based weak supervision is more ef-
+fective than span-based for our model.
+For paragraph-level and document-level mod-
+els, H2 corresponds differently to possible out-
+comes. For paragraph models, one outcome can
+select answer spans in all positive paragraphs and
+NULL in negative ones. For document-level mod-
+els, we view answers in different paragraphs as
+outcomes of multiple draws from the distribution.
+The identity of the particular correct span or be-
+gin/end position is unknown, but we can compute
+the probability of the event comprising the consis-
+tent outcomes. Table 2 shows the log-probability
+of the outcomes consistent with H2 in row two
+(right for span-based and left for position-based
+interpretation, when plugging in
+∑
+for Ξ).
+H3: The document has a correct answer in
+its A-consistent set YA. This assumption posits
+that the document has a correct answer span (or
+begin/end positions), but not every positive para-
+graph needs to have one. It further improves super-
+vision quality (↗), because for example, it allows
+the model to filter out the noise in paragraph two
+in Fig. 1. Since the model is given a choice of any
+of the A-consistent mentions, it has the capability
+to assign zero probability mass on the supervision-
+consistent mentions in that paragraph.
+On the other hand, H3 has lower coverage (↘)
+than H1 and H2, because it provides a single pos-
+itive example for the whole document, rather than
+one for each positive paragraph. It also reduces
+the strength of the supervision signal (↘), as the
+model now needs to figure out which mention to
+select from the larger document-level set YA.
+Note that we can only use H3 coupled with a
+document-level model, because a paragraph-level
+model cannot directly tradeoff answers from dif-
+ferent paragraphs against each other, to select a
+single answer span from the document. As with
+the other distant supervision hypotheses, span-
+based and position-based definitions of the possi-
+ble consistent outcomes can be formulated. The
+log-probabilities of these events are defined in row
+three of Table 2, when using
+∑
+for Ξ. H3 was
+used by Kadlec et al. (2016) for cloze-style dis-
+tantly supervised QA with recurrent neural net-
+work models.
+The probability-space (paragraph vs. document-
+level) and the distant supervision assumption (H1,
+H2, and H3, each position or span-based) together
+define our interpretation of the distant supervision
+signal resulting in definitions of probability space
+outcomes consistent with the supervision. Next,
+we define corresponding optimization objectives
+to train a model based on this supervision and de-
+scribe the inference methods to make predictions
+with a trained model.
+4 Optimization and Inference Methods
+For each distant supervision hypothesis, we max-
+imize either the marginal log-likelihood of A-
+5662
+consistent outcomes (MML) or the log-likelihood
+of the most likely outcome (HardEM). The latter
+was found effective for weakly supervised tasks
+including QA and semantic parsing by Min et al.
+(2019).
+Table 2 shows the objective functions for all
+distant supervision assumptions, each compris-
+ing a pairing of a distant supervision hypothesis
+(H1, H2, H3) and position-based vs. span-based
+interpretation. The probabilities are defined ac-
+cording to the assumed probability space (para-
+graph or document). In the table, K denotes the
+set of all paragraphs in the document, and Yk
+denotes the set of weakly labeled answer spans
+for the paragraph pk (which can be {NULL} for
+paragraph-level models). Note that span-based
+and position-based objective functions are equiv-
+alent for H1 because of the independence assump-
+tion, i.e. Ps(ik, jk) = Pb(ik)Pe(jk).
+Inference: Since the task is to predict an an-
+swer string rather than a particular mention for a
+given question, it is potentially beneficial to aggre-
+gate information across answer spans correspond-
+ing to the same string during inference. The score
+of a candidate answer string can be obtained as
+Pa(x) = Ξ(i,j)∈XPs(i, j), where X is the set of
+spans corresponding to the answer string x, and Ξ
+can be either
+∑
+or max.5 It is usually beneficial to
+match the training objective with the correspond-
+ing inference method, i.e. MML with marginal in-
+ference Ξ =
+∑
+, and HardEM with max (Viterbi)
+inference Ξ = max. Min et al. (2019) showed
+HardEM optimization was useful when using an
+H2 span-level distant supervision assumption cou-
+pled with max inference, but it is unclear whether
+this trend holds when
+∑
+inference is useful or
+other distant supervision assumptions perform bet-
+ter. We therefore study exhaustive combinations
+of probability space, distant supervision assump-
+tion, and training and inference methods.
+5 Experiments
+5.1 Data and Implementation
+Two datasets are used in this paper: TriviaQA
+(Joshi et al., 2017) in its Wikipedia formulation,
+and NarrativeQA (summaries setting) (Kočiský
+et al., 2018). Using the same preprocessing as
+5For inference with marginal (
+∑
+) scoring, we use an ap-
+proximate scheme where we only aggregate probabilities of
+candidates strings generated from a 20-best list of begin/end
+answer positions for each paragraph.
+Clark and Gardner (2018) for TriviaQA-Wiki6,
+we only keep the top 8 ranked paragraphs up to
+400 tokens for each document-question pair for
+both training and evaluation. Following Min et al.
+(2019), for NarrativeQA we define the possible
+answer string sets A using Rouge-L (Lin, 2004)
+similarity with crouwdsourced abstractive answer
+strings. We use identical data preprocessing and
+the evaluation script provided by the authors.
+In this work, we use the BERT-base model for
+text encoding and train our model with the de-
+fault configuration as described in (Devlin et al.,
+2019), fine-tuning all parameters. We fine-tune
+for 3 epochs on TriviaQA and 2 epochs on Nar-
+rativeQA.
+5.2 Optimization and Inference for Latent
+Variable Models
+Here we look at the cross product of optimization
+(HardEM vs MML) and inference (Max vs Sum)
+for all distant supervision assumptions that result
+in models with latent variables. We therefore ex-
+clude H1 and look at the other two hypotheses, H2
+and H3, each coupled with a span-based (Span) or
+position-based (Pos) formulation and a paragraph-
+level (P) or a document level (D) probability space.
+The method used in Min et al. (2019) corresponds
+to span-based H2-P with HardEM training and
+Max inference. The results are shown in Fig. 3.
+First, we observe that inference with Sum leads
+to significantly better results on TriviaQA un-
+der H2-P and H2-D, and slight improvement un-
+der H3-D. On NarrativeQA, inference with Max
+is better. We attribute this to the fact that cor-
+rect answers often have multiple relevant mentions
+for TriviaQA (also see §5.6), whereas for Narra-
+tiveQA this is rarely the case. Thus, inference with
+Sum in NarrativeQA could potentially boost the
+probability of irrelevant frequent strings.
+Consistent with (Min et al., 2019), we observe
+that span-based HardEM works better than span-
+based MML under H2-P, with a larger advantage
+on NarrativeQA than on TriviaQA. However, un-
+der H2-D and H3-D, span-based MML performs
+consistently better than span-based HardEM. For
+position-based objectives, MML is consistently
+better than HardEM (potentially because HardEM
+may decide to place its probability mass on begin-
+end position combinations that do not contain
+mentions of strings in A). Finally, it can be ob-
+6https://github.com/allenai/document-qa
+5663
+0.62
+0.64
+0.66
+0.68
+0.7
+0.72
+0.74
+0.76
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H2-P H2-D H3-D
+Max Sum
+(a) TriviaQA F1
+0.48
+0.5
+0.52
+0.54
+0.56
+0.58
+0.6
+0.62
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H
+ar
+d
+EM
+-S
+p
+an
+H
+ar
+d
+EM
+-P
+o
+s
+M
+M
+L-
+Sp
+an
+M
+M
+L-
+P
+o
+s
+H2-P H2-D H3-D
+Max Sum
+(b) NarrativeQA Rouge-L
+Figure 3: Comparison of different optimization and in-
+ference choices grouped by distant supervision hypoth-
+esis based on dev set results for TriviaQA and Narra-
+tiveQA.
+served that under each distant supervision hypoth-
+esis/probability space combination, the position-
+based MML is always the best among the four ob-
+jectives. Position-based objectives may perform
+better due to the independence assumptions for be-
+gin/end positions of the model we use and future
+work may arrive at different conclusions if posi-
+tion dependencies are integrated. Based on this
+thorough exploration, we focus on experimenting
+with position-based objectives with MML for the
+rest of this paper.
+5.3 Probability Space and Distant
+Supervision Assumptions
+In this subsection, we compare probability space
+and distant supervision assumptions. Table 3
+shows the dev set results, where the upper sec-
+tion compares paragraph-level models (H1-P, H2-
+P), and the lower section compares document-
+level models (H1-D, H2-D, H3-D). The perfor-
+mance of models with both Max and Sum infer-
+ence is shown. We report F1 and Exact Match
+(EM) scores for TriviaQA, and Rouge-L scores for
+NarrativeQA.
+For TriviaQA, H3-D achieves significantly bet-
+Objective Infer TriviaQA NarrativeQA
+F1 EM Rouge-L
+Paragraph-level Models
+H1-P
+Max 67.9 63.3 55.3
+Sum 70.4 66.0 53.6
+H2-P
+Max 71.9 67.7 59.2
+Sum 73.0 69.0 57.8
+Document-level Models
+H1-D
+Max 55.8 51.0 59.4
+Sum 65.2 61.2 59.1
+H2-D
+Max 70.3 66.2 60.1
+Sum 72.4 68.4 59.9
+H3-D
+Max 75.1 70.6 59.1
+Sum 75.3 70.8 59.2
+Table 3: Comparison of distant supervision hypothe-
+ses using MML-Pos objectives on TriviaQA and Nar-
+rativeQA dev sets.
+ter results than other formulations. Only H3-
+D is capable of “cleaning” noise from positive
+paragraphs that don’t have a correct answer (e.g.
+paragraph two in Fig. 1), by deciding which A-
+consistent mention to trust. The paragraph-level
+models H1-P and H2-P outperform their corre-
+sponding document-level counterparts H1-D and
+H2-D. This may be due to the fact that without
+H3, and without predicting NULL, Dmodels do not
+learn to detect irrelevant paragraphs.
+Unlike for TriviaQA, H2-D models achieve the
+best performance for NarrativeQA. We hypothe-
+size this is due to the fact that positive paragraphs
+that don’t have a correct answer are very rare in
+NarrativeQA (as summaries are relatively short
+and answer strings are human-annotated for the
+specific documents). Therefore, H3 is not needed
+to clean noisy supervision, and it is not useful
+since it also leads to a reduction in the number of
+positive examples (coverage) for the model. Here,
+document-level models always improve over their
+paragraph counterparts, by learning to calibrate
+paragraphs directly against each other.
+5.4 Multi-Objective Formulations and Clean
+Supervision
+Here we study two methods to further improve
+weakly supervised QA models. First, we com-
+bine two distant supervision objectives in a multi-
+task manner, i.e. H2-P and H3-D for TriviaQA, and
+H2-P and H2-D for NarrativeQA, chosen based
+on the results in §5.3. H2 objectives have higher
+coverage than H3 while being more susceptible
+5664
+Objective Clean Infer TriviaQA NarrativeQA
+F1 EM Rouge-L
+Single-objective
+Par
+X Max 71.9 67.7 59.2Sum 73.0 69.0 57.8
+X
+Max 74.2 70.1 61.7
+Sum 74.9 70.9 61.7
+Doc
+X Max 75.1 70.6 60.1Sum 75.3 70.8 59.9
+X
+Max 75.5 70.8 62.8
+Sum 75.5 70.9 62.9
+Multi-objective
+Par
++
+Doc
+X Max 75.6 71.2 60.5Sum 75.9 71.6 60.5
+X
+Max 75.8 71.2 63.0
+Sum 76.2 71.7 63.1
+Table 4: Dev set results comparing multi-objectives
+and clean supervison. X indicates the QA model is
+pre-trained on SQUAD.
+to noise. Paragraph-level models have the ad-
+vantage of learning to score irrelevant paragraphs
+(via NULL outcomes). Note that we use the same
+parameters for the two objectives and the multi-
+objective formulation does not have more param-
+eters and is no less efficient than the individual
+models. Second, we use external clean supervi-
+sion from SQUAD 2.0 (Rajpurkar et al., 2018)
+to train the BERT-based QA model for 2 epochs.
+This model matches the P probability space and
+is able to detect both NULL and extractive answer
+spans. The resulting network is used to initialize
+the models for TriviaQA and NarrativeQA. The re-
+sults are shown in Table 4.
+It is not surprising that using external clean
+supervision improves model performance (e.g.
+(Min et al., 2017)). We note that, interestingly,
+this external supervision narrows the performance
+gap between paragraph-level and document-level
+models, and reduces the difference between the
+two inference methods.
+Compared with their single-objective compo-
+nents, multi-objective formulations improve per-
+formance on both TriviaQA and NarrativeQA.
+5.5 Test Set Evaluation
+Table 5 reports test set results on TriviaQA and
+NarrativeQA for our best models, in comparison to
+recent state-of-art (SOTA) models. For TriviaQA,
+we report F1 and EM scores on the full test set
+and the verified subset. For NarrativeQA, Rouge-
+TriviaQA Wiki
+Full Verified
+F1 EM F1 EM
+Ours (H2-P+H3-D) 76.3 72.1 85.5 82.2
+w/o SQUAD 75.7 71.6 83.6 79.6
+(Wang et al., 2018b) 71.4 66.6 78.7 74.8
+(Clark and Gardner, 2018) 68.9 64.0 72.9 68.0
+(Min et al., 2019) 67.1 – – –
+NarrativeQA Summary
+Rouge-L
+Ours (H2-P+H2-D) 62.9
+w/o SQUAD 60.5
+(Nishida et al., 2019) 59.9
+w/o external data 54.7
+(Min et al., 2019) 58.8
+Table 5: Test set results on TriviaQA Wiki and Narra-
+tiveQA Summaries. “w/o SQUAD” refers to our best
+model without pretraining on SQUAD 2.0. “w/o exter-
+nal data” refers to the model from (Nishida et al., 2019)
+without using MS MARCO data (Bajaj et al., 2018).
+L scores are reported.
+Compared to recent TriviaQA SOTA (Wang
+et al., 2018b), our best models achieve 4.9 F1
+and 5.5 EM improvement on the full test set, and
+6.8 F1 and 7.4 EM improvement on the verified
+subset. On the NarrativeQA test set, we improve
+Rouge-L by 3.0 over (Nishida et al., 2019). The
+large improvement, even without additional fully
+labeled data, demonstrates the importance of se-
+lecting an appropriate probability space and inter-
+preting the distant-supervision in a way cognizant
+of the properties of the data, as well as selecting
+a strong optimization and inference method. With
+external fully labeled data to initialize the model,
+performance is further significantly improved.
+5.6 Analysis
+In this subsection, we carry out analyses to study
+the relative performance of paragraph-level and
+document-level models, depending on the size
+of answer string set |A| and the number of A-
+consistent spans, which are hypothesized to cor-
+relate with label noise. We use the TriviaQA dev
+set and the best performing models, i.e. H2-P and
+H3-D with Sum inference.
+We categorize examples based on the size of
+their answer string set, |A|, and the size of
+their corresponding set of A-consistent spans, |I|.
+Specifically, we divide the data into 4 subsets and
+5665
+Subset |A| |I| Size H2-P H3-D ∆
+Qss = 1 ≤ 5 2585 66.8 67.4 0.6
+Qls > 1 ≤ 5 853 68.7 70.1 1.4
+Qsl = 1 > 5 1149 82.0 84.9 2.9
+Qll > 1 > 5 3034 86.3 88.4 2.1
+Table 6: F1 scores on 4 subsets of TriviaQA dev,
+grouped by the size of their answer string sets A and
+corresponding set of possible mentions I. ∆ indicates
+the improvement from H2-P to H3-D.
+report performance separately on each subset, as
+shown in Table 6. In general, we expect Qsl and
+Qll to be noisier due to the larger I, whereQsl po-
+tentially includes many irrelevant mentions while
+Qll likely contains more incorrect answer strings
+(false aliases). We can observe that the improve-
+ment is more significant for these noisier subsets,
+suggesting document-level modeling is crucial for
+handling both types of label noise.
+6 Related Work
+Distant supervision has been successfully used
+for decades for information extraction tasks such
+as entity tagging and relation extraction (Craven
+and Kumlien, 1999; Mintz et al., 2009). Sev-
+eral ways have been proposed to learn with DS,
+e.g., multi-label multi-instance learning (Surdeanu
+et al., 2012), assuming at least one supporting
+evidence (Hoffmann et al., 2011), integration of
+label-specific priors (Ritter et al., 2013), and adap-
+tion to shifted label distributions (Ye et al., 2019).
+Recent work has started to explore distant su-
+pervision to scale up QA systems, particularly
+for open-domain QA where the evidence has to
+be retrieved rather than given as input. Read-
+ing comprehension (RC) with evidence retrieved
+from information retrieval systems establishes a
+weakly-supervised QA setting due to the noise in
+the heuristics-based span labels (Chen et al., 2017;
+Joshi et al., 2017; Dunn et al., 2017; Dhingra et al.,
+2017). One line of work jointly learns RC and
+evidence ranking using either a pipeline system
+(Wang et al., 2018a; Lee et al., 2018; Kratzwald
+and Feuerriegel, 2018) or an end-to-end model
+(Lee et al., 2019).
+Another line of work focuses on improving
+distantly-supervised RC models by developing
+learning methods and model architectures that can
+better use noisy labels. Clark and Gardner (2018)
+propose a paragraph-pair ranking objective, which
+has components of both our H2-P and H3-D
+position-based formulations. They don’t explore
+multiple inference methods or combinations of ob-
+jectives and use less powerful representations. In
+(Lin et al., 2018), a coarse-to-fine model is pro-
+posed to handle label noise by aggregating infor-
+mation from relevant paragraphs and then extract-
+ing answers from selected ones. Min et al. (2019)
+propose a hard EM learning scheme which we in-
+cluded in our experimental evaluation.
+Our work focuses on examining probabilistic
+assumptions for document-level extractive QA.
+We provide a unified view of multiple methods
+in terms of their probability space and distant su-
+pervision assumptions and evaluate the impact of
+their components in combination with optimiza-
+tion and inference methods. To the best of our
+knowledge, the three DS hypotheses along with
+position and span-based interpretations have not
+been formalized and experimentally compared on
+multiple datasets. In addition, the multi-objective
+formulation is new.
+7 Conclusions
+In this paper, we demonstrated that the choice of
+probability space and interpretation of the distant
+supervision signal for document-level QA have a
+large impact, and that they interact. Depending on
+the properties of the data, different configurations
+are best, and a combined multi-objective formula-
+tion can reap the benefits of its constituents.
+A future direction is to extend this work to ques-
+tion answering tasks that require reasoning over
+multiple documents, e.g., open-domain QA. In ad-
+dition, the findings may generalize to other tasks,
+e.g., corpus-level distantly-supervised relation ex-
+traction.
+Acknowledgement
+Some of the ideas in this work originated from
+Hao Cheng’s internship with Google Research.
+We would like to thank Ankur Parikh, Michael
+Collins, and William Cohen for discussion and
+detailed feedback on this work, as well as other
+members from the Google Research Language
+team and the anonymous reviewers for valuable
+suggestions. We would also like to thank Sewon
+Min for generously sharing the processed data and
+evaluation script for NarrativeQA.
+5666
+References
+Payal Bajaj, Daniel Campos, Nick Craswell, Li Deng,
+Jianfeng Gao, Xiaodong Liu, Rangan Majumder,
+Andrew McNamara, Bhaskar Mitra, Tri Nguyen,
+Mir Rosenberg, Xia Song, Alina Stoica, Saurabh
+Tiwary, and Tong Wang. 2018. MS MARCO: A
+human generated machine reading comprehension
+dataset. CoRR, abs/1611.09268.
+Danqi Chen, Adam Fisch, Jason Weston, and Antoine
+Bordes. 2017. Reading Wikipedia to answer open-
+domain questions. In Proceedings of the 55th An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 1870–
+1879. Association for Computational Linguistics.
+Christopher Clark and Matt Gardner. 2018. Simple
+and effective multi-paragraph reading comprehen-
+sion. In Proceedings of the 56th Annual Meeting of
+the Association for Computational Linguistics (Vol-
+ume 1: Long Papers), pages 845–855. Association
+for Computational Linguistics.
+Mark Craven and Johan Kumlien. 1999. Constructing
+biological knowledge bases by extracting informa-
+tion from text sources. In Proceedings of the Sev-
+enth International Conference on Intelligent Systems
+for Molecular Biology.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of
+deep bidirectional transformers for language under-
+standing. In Proceedings of the 2019 Conference of
+the North American Chapter of the Association for
+Computational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long and Short Papers), pages
+4171–4186. Association for Computational Linguis-
+tics.
+Bhuwan Dhingra, Kathryn Mazaitis, and William W.
+Cohen. 2017. Quasar: Datasets for question answer-
+ing by search and reading. CoRR, abs/1707.03904.
+Matthew Dunn, Levent Sagun, Mike Higgins, V. Ugur
+Güney, Volkan Cirik, and Kyunghyun Cho. 2017.
+Searchqa: A new q&a dataset augmented with con-
+text from a search engine. CoRR, abs/1704.05179.
+Raphael Hoffmann, Congle Zhang, Xiao Ling,
+Luke Zettlemoyer, and Daniel S. Weld. 2011.
+Knowledge-based weak supervision for information
+extraction of overlapping relations. In Proceedings
+of the 49th Annual Meeting of the Association for
+Computational Linguistics: Human Language Tech-
+nologies, pages 541–550. Association for Computa-
+tional Linguistics.
+Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke
+Zettlemoyer. 2017. Triviaqa: A large scale distantly
+supervised challenge dataset for reading comprehen-
+sion. In Proceedings of the 55th Annual Meeting of
+the Association for Computational Linguistics (Vol-
+ume 1: Long Papers), pages 1601–1611. Associa-
+tion for Computational Linguistics.
+Rudolf Kadlec, Martin Schmid, Ondřej Bajgar, and Jan
+Kleindienst. 2016. Text understanding with the at-
+tention sum reader network. In Proceedings of the
+54th Annual Meeting of the Association for Compu-
+tational Linguistics (Volume 1: Long Papers), pages
+908–918. Association for Computational Linguis-
+tics.
+Tomáš Kočiský, Jonathan Schwarz, Phil Blunsom,
+Chris Dyer, Karl Moritz Hermann, Gábor Melis, and
+Edward Grefenstette. 2018. The NarrativeQA read-
+ing comprehension challenge. Transactions of the
+Association for Computational Linguistics, 6:317–
+328.
+Bernhard Kratzwald and Stefan Feuerriegel. 2018.
+Adaptive document retrieval for deep question an-
+swering. In Proceedings of the 2018 Conference on
+Empirical Methods in Natural Language Process-
+ing, pages 576–581. Association for Computational
+Linguistics.
+Jinhyuk Lee, Seongjun Yun, Hyunjae Kim, Miyoung
+Ko, and Jaewoo Kang. 2018. Ranking paragraphs
+for improving answer recall in open-domain ques-
+tion answering. In Proceedings of the 2018 Con-
+ference on Empirical Methods in Natural Language
+Processing, pages 565–569. Association for Com-
+putational Linguistics.
+Kenton Lee, Ming-Wei Chang, and Kristina Toutanova.
+2019. Latent retrieval for weakly supervised open
+domain question answering. In Proceedings of the
+57th Annual Meeting of the Association for Compu-
+tational Linguistics, pages 6086–6096. Association
+for Computational Linguistics.
+Chin-Yew Lin. 2004. ROUGE: A package for auto-
+matic evaluation of summaries. In Text Summa-
+rization Branches Out, pages 74–81. Association for
+Computational Linguistics.
+Yankai Lin, Haozhe Ji, Zhiyuan Liu, and Maosong Sun.
+2018. Denoising distantly supervised open-domain
+question answering. In Proceedings of the 56th An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 1736–
+1745.
+Sewon Min, Danqi Chen, Hannaneh Hajishirzi, and
+Luke Zettlemoyer. 2019. A discrete hard EM ap-
+proach for weakly supervised question answering.
+In Proceedings of the 2019 Conference on Empirical
+Methods in Natural Language Processing and the
+9th International Joint Conference on Natural Lan-
+guage Processing (EMNLP-IJCNLP), pages 2844–
+2857. Association for Computational Linguistics.
+Sewon Min, Minjoon Seo, and Hannaneh Hajishirzi.
+2017. Question answering through transfer learn-
+ing from large fine-grained supervision data. In Pro-
+ceedings of the 55th Annual Meeting of the Associa-
+tion for Computational Linguistics (Volume 2: Short
+Papers), pages 510–517. Association for Computa-
+tional Linguistics.
+5667
+Mike Mintz, Steven Bills, Rion Snow, and Daniel Ju-
+rafsky. 2009. Distant supervision for relation ex-
+traction without labeled data. In Proceedings of the
+Joint Conference of the 47th Annual Meeting of the
+ACL and the 4th International Joint Conference on
+Natural Language Processing of the AFNLP, pages
+1003–1011. Association for Computational Linguis-
+tics.
+Kyosuke Nishida, Itsumi Saito, Kosuke Nishida, Kazu-
+toshi Shinoda, Atsushi Otsuka, Hisako Asano, and
+Junji Tomita. 2019. Multi-style generative reading
+comprehension. In Proceedings of the 57th Annual
+Meeting of the Association for Computational Lin-
+guistics, pages 2273–2284. Association for Compu-
+tational Linguistics.
+Pranav Rajpurkar, Robin Jia, and Percy Liang. 2018.
+Know what you don’t know: Unanswerable ques-
+tions for SQuAD. In Proceedings of the 56th Annual
+Meeting of the Association for Computational Lin-
+guistics (Volume 2: Short Papers), pages 784–789.
+Association for Computational Linguistics.
+Alan Ritter, Luke Zettlemoyer, Oren Etzioni, et al.
+2013. Modeling missing data in distant supervision
+for information extraction. Transactions of the As-
+sociation for Computational Linguistics, 1:367–378.
+Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati,
+and Christopher D. Manning. 2012. Multi-instance
+multi-label learning for relation extraction. In Pro-
+ceedings of the 2012 Joint Conference on Empirical
+Methods in Natural Language Processing and Com-
+putational Natural Language Learning, EMNLP-
+CoNLL ’12, pages 455–465, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Shuohang Wang, Mo Yu, Xiaoxiao Guo, Zhiguo Wang,
+Tim Klinger, Wei Zhang, Shiyu Chang, Gerald
+Tesauro, Bowen Zhou, and Jing Jiang. 2018a. R3:
+Reinforced reader-ranker for open-domain question
+answering. In AAAI Conference on Artificial Intelli-
+gence.
+Wei Wang, Ming Yan, and Chen Wu. 2018b. Multi-
+granularity hierarchical attention fusion networks
+for reading comprehension and question answering.
+In Proceedings of the 56th Annual Meeting of the
+Association for Computational Linguistics (Volume
+1: Long Papers), pages 1705–1714. Association for
+Computational Linguistics.
+Qinyuan Ye, Liyuan Liu, Maosen Zhang, and Xiang
+Ren. 2019. Looking beyond label noise: Shifted la-
+bel distribution matters in distantly supervised rela-
+tion extraction. In Proceedings of the 2019 Con-
+ference on Empirical Methods in Natural Language
+Processing and the 9th International Joint Confer-
+ence on Natural Language Processing (EMNLP-
+IJCNLP), pages 3839–3848. Association for Com-
+putational Linguistics.

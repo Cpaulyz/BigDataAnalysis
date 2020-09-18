@@ -1,7 +1,15 @@
 */target/
 
 ### IntelliJ IDEA ###
-*/.idea
+**/.idea
 */*.iws
 */*.iml
 */*.ipr
+.idea
+
+/Assignment2/src/main/resources/ACL2020/*.pdf
+Assignment2/src/main/resources/ACL2020/*.pdf
+
+### pycharm ###
+**/venv/
+venv/

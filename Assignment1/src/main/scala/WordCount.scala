@@ -19,8 +19,8 @@ object WordCount {
     // 每个单词记一次，因为单词不区分大小写，这里用lambda表达式转为小写
     val wordOne: RDD[(String, Int)] = words.map(str => (str.toLowerCase(), 1))
     // reduce
-//    val wordCount: RDD[(String, Int)] = wordOne.reduceByKey(_ + _)
-        val wordCount: RDD[(String, Int)] = wordOne.reduceByKey((a, b) => (a + b))
+    val wordCount: RDD[(String, Int)] = wordOne.reduceByKey(_ + _).sortBy(_._2,false)
+//        val wordCount: RDD[(String, Int)] = wordOne.reduceByKey((a, b) => (a + b))
     // 判断目标文件夹是否存在，存在则删除
     val target: File = new File("result")
     if (target.exists()) {

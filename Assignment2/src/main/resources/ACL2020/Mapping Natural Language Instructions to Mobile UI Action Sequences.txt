@@ -1,0 +1,1285 @@
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 8198–8210
+July 5 - 10, 2020. c©2020 Association for Computational Linguistics
+8198
+Mapping Natural Language Instructions to Mobile UI Action Sequences
+Yang Li Jiacong He Xin Zhou Yuan Zhang Jason Baldridge
+Google Research, Mountain View, CA, 94043
+{liyang,zhouxin,zhangyua,jasonbaldridge}@google.com
+Abstract
+We present a new problem: grounding natu-
+ral language instructions to mobile user inter-
+face actions, and create three new datasets for
+it. For full task evaluation, we create PIX-
+ELHELP, a corpus that pairs English instruc-
+tions with actions performed by people on a
+mobile UI emulator. To scale training, we de-
+couple the language and action data by (a) an-
+notating action phrase spans in HowTo instruc-
+tions and (b) synthesizing grounded descrip-
+tions of actions for mobile user interfaces. We
+use a Transformer to extract action phrase tu-
+ples from long-range natural language instruc-
+tions. A grounding Transformer then contex-
+tually represents UI objects using both their
+content and screen position and connects them
+to object descriptions. Given a starting screen
+and instruction, our model achieves 70.59%
+accuracy on predicting complete ground-truth
+action sequences in PIXELHELP.
+1 Introduction
+Language helps us work together to get things done.
+People instruct one another to coordinate joint ef-
+forts and accomplish tasks involving complex se-
+quences of actions. This takes advantage of the abil-
+ities of different members of a speech community,
+e.g. a child asking a parent for a cup she cannot
+reach, or a visually impaired individual asking for
+assistance from a friend. Building computational
+agents able to help in such interactions is an impor-
+tant goal that requires true language grounding in
+environments where action matters.
+An important area of language grounding in-
+volves tasks like completion of multi-step actions in
+a graphical user interface conditioned on language
+instructions (Branavan et al., 2009, 2010; Liu et al.,
+2018; Gur et al., 2019). These domains matter for
+accessibility, where language interfaces could help
+visually impaired individuals perform tasks with
+open the app drawer. navigate to 
+settings > network & internet > 
+Wifi. click add network, and 
+then enter starbucks for SSID.
+Action Phrase 
+Extraction Model
+Screen   Operation Object  Argument
+Screen_1 CLICK     OBJ_2
+Screen_2 CLICK     OBJ_6
+Screen_3 CLICK     OBJ_5
+...
+Screen_6 INPUT     OBJ_9  [Starbucks]
+Instructions
+Operation_Desc  Object_Desc   Argument_Desc
+[open]          [app drawer]
+[navigate to]   [settings]
+[navigate to]   [network & 
+                 internet]
+[navigate to]   [wifi]
+[click]         [add network]
+[enter]         [ssid]        [starbucks]
+Executable actions based on the 
+screen at each step
+Action Phrase Tuples
+Grounding Model
+Transition to 
+next screen
+…
+Mobile User 
+Interface at 
+each step
+Figure 1: Our model extracts the phrase tuple that de-
+scribe each action, including its operation, object and
+additional arguments, and grounds these tuples as exe-
+cutable action sequences in the UI.
+interfaces that are predicated on sight. This also
+matters for situational impairment (Sarsenbayeva,
+2018) when one cannot access a device easily while
+encumbered by other factors, such as cooking.
+We focus on a new domain of task automation in
+which natural language instructions must be inter-
+preted as a sequence of actions on a mobile touch-
+screen UI. Existing web search is quite capable of
+retrieving multi-step natural language instructions
+for user queries, such as “How to turn on flight
+mode on Android.” Crucially, the missing piece
+for fulfilling the task automatically is to map the
+returned instruction to a sequence of actions that
+can be automatically executed on the device with
+8199
+little user intervention; this our goal in this paper.
+This task automation scenario does not require a
+user to maneuver through UI details, which is use-
+ful for average users and is especially valuable for
+visually or situationally impaired users. The abil-
+ity to execute an instruction can also be useful for
+other scenarios such as automatically examining
+the quality of an instruction.
+Our approach (Figure 1) decomposes the prob-
+lem into an action phrase-extraction step and a
+grounding step. The former extracts operation, ob-
+ject and argument descriptions from multi-step in-
+structions; for this, we use Transformers (Vaswani
+et al., 2017) and test three span representations.
+The latter matches extracted operation and object
+descriptions with a UI object on a screen; for this,
+we use a Transformer that contextually represents
+UI objects and grounds object descriptions to them.
+We construct three new datasets 1. To assess full
+task performance on naturally occurring instruc-
+tions, we create a dataset of 187 multi-step English
+instructions for operating Pixel Phones and produce
+their corresponding action-screen sequences using
+annotators. For action phrase extraction training
+and evaluation, we obtain English How-To instruc-
+tions from the web and annotate action description
+spans. A Transformer with spans represented by
+sum pooling (Li et al., 2019) obtains 85.56% accu-
+racy for predicting span sequences that completely
+match the ground truth. To train the grounding
+model, we synthetically generate 295k single-step
+commands to UI actions, covering 178K different
+UI objects across 25K mobile UI screens.
+Our phrase extractor and grounding model to-
+gether obtain 89.21% partial and 70.59% com-
+plete accuracy for matching ground-truth action
+sequences on this challenging task. We also evalu-
+ate alternative methods and representations of ob-
+jects and spans and present qualitative analyses to
+provide insights into the problem and models.
+2 Problem Formulation
+Given an instruction of a multi-step task, I =
+t1:n = (t1, t2, ..., tn), where ti is the ith token in in-
+struction I , we want to generate a sequence of auto-
+matically executable actions, a1:m, over a sequence
+of user interface screens S, with initial screen s1
+1Our data pipeline is available at https://github.
+com / google-research / google-research /
+tree/master/seq2act.
+and screen transition function sj=τ(aj−1, sj−1):
+p(a1:m|s1, τ, t1:n) =
+m∏
+j=1
+p(aj |a<j , s1, τ, t1:n)
+(1)
+An action aj = [rj , oj , uj ] consists of an op-
+eration rj (e.g. Tap or Text), the UI object oj
+that rj is performed on (e.g., a button or an icon),
+and an additional argument uj needed for oj (e.g.
+the message entered in the chat box for Text or
+null for operations such as Tap). Starting from
+s1, executing a sequence of actions a<j arrives at
+screen sj that represents the screen at the jth step:
+sj = τ(aj−1, τ(...τ(a1, s1))):
+p(a1:m|s1, τ, t1:n) =
+m∏
+j=1
+p(aj |sj , t1:n) (2)
+Each screen sj = [cj,1:|sj |, λj ] contains a set
+of UI objects and their structural relationships.
+cj,1:|sj | = {cj,k | 1 ≤ k ≤ |sj |}, where |sj | is
+the number of objects in sj , from which oj is cho-
+sen. λj defines the structural relationship between
+the objects. This is often a tree structure such as the
+View hierarchy for an Android interface2 (similar
+to a DOM tree for web pages).
+An instruction I describes (possibly multiple) ac-
+tions. Let āj denote the phrases in I that describes
+action aj . āj = [r̄j , ōj , ūj ] represents a tuple of
+descriptions with each corresponding to a span—a
+subsequence of tokens—in I . Accordingly, ā1:m
+represents the description tuple sequence that we
+refer to as ā for brevity. We also define Ā as all pos-
+sible description tuple sequences of I , thus ā ∈ Ā.
+p(aj |sj , t1:n) =
+∑
+Ā
+p(aj |ā, sj , t1:n)p(ā|sj , t1:n)
+(3)
+Because aj is independent of the rest of the in-
+struction given its current screen sj and description
+āj , and ā is only related to the instruction t1:n, we
+can simplify (3) as (4).
+p(aj |sj , t1:n) =
+∑
+Ā
+p(aj |āj , sj)p(ā|t1:n) (4)
+2https : / / developer . android . com /
+reference/android/view/View.html
+8200
+We define â as the most likely description of
+actions for t1:n.
+â = arg max
+ā
+p(ā|t1:n)
+= arg max
+ā1:m
+m∏
+j=1
+p(āj |ā<j , t1:n)
+(5)
+This defines the action phrase-extraction model,
+which is then used by the grounding model:
+p(aj |sj , t1:n) ≈ p(aj |âj , sj)p(âj |â<j , t1:n) (6)
+p(a1:m|t1:n, S) ≈
+m∏
+j=1
+p(aj |âj , sj)p(âj |â<j , t1:n)
+(7)
+p(âj |â<j , t1:n) identifies the description tuples for
+each action. p(aj |âj , sj) grounds each description
+to an executable action given the screen.
+3 Data
+The ideal dataset would have natural instructions
+that have been executed by people using the UI.
+Such data can be collected by having annotators
+perform tasks according to instructions on a mobile
+platform, but this is difficult to scale. It requires
+significant investment to instrument: different ver-
+sions of apps have different presentation and be-
+haviors, and apps must be installed and configured
+for each task. Due to this, we create a small dataset
+of this form, PIXELHELP, for full task evaluation.
+For model training at scale, we create two other
+datasets: ANDROIDHOWTO for action phrase ex-
+traction and RICOSCA for grounding. Our datasets
+are targeted for English. We hope that starting with
+a high-resource language will pave the way to cre-
+ating similar capabilities for other languages.
+3.1 PIXELHELP Dataset
+Pixel Phone Help pages3 provide instructions for
+performing common tasks on Google Pixel phones
+such as switch Wi-Fi settings (Fig. 2) or check
+emails. Help pages can contain multiple tasks, with
+each task consisting of a sequence of steps. We
+pulled instructions from the help pages and kept
+ones that can be automatically executed. Instruc-
+tions that requires additional user input such as
+Tap the app you want to uninstall are discarded.
+3https://support.google.com/pixelphone
+Figure 2: PIXELHELP example: Open your device’s
+Settings app. Tap Network & internet. Click Wi-Fi.
+Turn on Wi-Fi.. The instruction is paired with actions,
+each of which is shown as a red dot on a specific screen.
+Also, instructions that involve actions on a physical
+button such as Press the Power button for a few
+seconds are excluded because these events cannot
+be executed on mobile platform emulators.
+We instrumented a logging mechanism on a
+Pixel Phone emulator and had human annotators
+perform each task on the emulator by following the
+full instruction. The logger records every user ac-
+tion, including the type of touch events that are trig-
+gered, each object being manipulated, and screen
+information such as view hierarchies. Each item
+thus includes the instruction input, t1:n, the screen
+for each step of task, s1:m, and the target action
+performed on each screen, a1:m.
+In total, PIXELHELP includes 187 multi-step in-
+structions of 4 task categories: 88 general tasks,
+such as configuring accounts, 38 Gmail tasks, 31
+Chrome tasks, and 30 Photos related tasks. The
+number of steps ranges from two to eight, with
+a median of four. Because it has both natural in-
+structions and grounded actions, we reserve PIX-
+ELHELP for evaluating full task performance.
+3.2 ANDROIDHOWTO Dataset
+No datasets exist that support learning the action
+phrase extraction model, p(âj |â<j , t1:n), for mo-
+bile UIs. To address this, we extracted English
+instructions for operating Android devices by pro-
+cessing web pages to identify candidate instruc-
+tions for how-to questions such as how to change
+the input method for Android. A web crawling ser-
+vice scrapes instruction-like content from various
+websites. We then filter the web contents using both
+heuristics and manual screening by annotators.
+Annotators identified phrases in each instruction
+that describe executable actions. They were given
+a tutorial on the task and were instructed to skip
+instructions that are difficult to understand or label.
+For each component in an action description, they
+8201
+select the span of words that describes the compo-
+nent using a web annotation interface (details are
+provided in the appendix). The interface records
+the start and end positions of each marked span.
+Each instruction was labeled by three annotators:
+three annotators agreed on 31% of full instructions
+and at least two agreed on 84%. For the consistency
+at the tuple level, the agreement across all the anno-
+tators is 83.6% for operation phrases, 72.07% for
+object phrases, and 83.43% for input phrases. The
+discrepancies are usually small, e.g., a description
+marked as your Gmail address or Gmail address.
+The final dataset includes 32,436 data points
+from 9,893 unique How-To instructions and split
+into training (8K), validation (1K) and test (900).
+All test examples have perfect agreement across
+all three annotators for the entire sequence. In
+total, there are 190K operation spans, 172K object
+spans, and 321 input spans labeled. The lengths of
+the instructions range from 19 to 85 tokens, with
+median of 59. They describe a sequence of actions
+from one to 19 steps, with a median of 5.
+3.3 RICOSCA Dataset
+Training the grounding model, p(aj |âj , sj) in-
+volves pairing action tuples aj along screens sj
+with action description âj . It is very difficult to col-
+lect such data at scale. To get past the bottleneck,
+we exploit two properties of the task to generate
+a synthetic command-action dataset, RICOSCA.
+First, we have precise structured and visual knowl-
+edge of the UI layout, so we can spatially relate UI
+elements to each other and the overall screen. Sec-
+ond, a grammar grounded in the UI can cover many
+of the commands and kinds of reference needed for
+the problem. This does not capture all manners of
+interacting conversationally with a UI, but it proves
+effective for training the grounding model.
+Rico is a public UI corpus with 72K Android UI
+screens mined from 9.7K Android apps (Deka et al.,
+2017). Each screen in Rico comes with a screen-
+shot image and a view hierarchy of a collection of
+UI objects. Each individual object, cj,k, has a set
+of properties, including its name (often an English
+phrase such as Send), type (e.g., Button, Image
+or Checkbox), and bounding box position on the
+screen. We manually removed screens whose view
+hierarchies do not match their screenshots by ask-
+ing annotators to visually verify whether the bound-
+ing boxes of view hierarchy leaves match each UI
+object on the corresponding screenshot image. This
+filtering results in 25K unique screens.
+For each screen, we randomly select UI elements
+as target objects and synthesize commands for op-
+erating them. We generate multiple commands to
+capture different expressions describing the opera-
+tion r̂j and the target object ôj . For example, the
+Tap operation can be referred to as tap, click, or
+press. The template for referring to a target object
+has slots Name, Type, and Location, which are
+instantiated using the following strategies:
+• Name-Type: the target’s name and/or type (the
+OK button or OK).
+• Absolute-Location: the target’s screen loca-
+tion (the menu at the top right corner).
+• Relative-Location: the target’s relative loca-
+tion to other objects (the icon to the right of
+Send).
+Because all commands are synthesized, the span
+that describes each part of an action, âj with respect
+to t1:n, is known. Meanwhile, aj and sj , the actual
+action and the associated screen, are present be-
+cause the constituents of the action are synthesized.
+In total, RICOSCA contains 295,476 single-step
+synthetic commands for operating 177,962 differ-
+ent target objects across 25,677 Android screens.
+4 Model Architectures
+Equation 7 has two parts. p(âj |â<j , t1:n) finds
+the best phrase tuple that describes the action at
+the jth step given the instruction token sequence.
+p(aj |âj , sj) computes the probability of an exe-
+cutable action aj given the best description of the
+action, âj , and the screen sj for the jth step.
+4.1 Phrase Tuple Extraction Model
+A common choice for modeling the conditional
+probability p(āj |ā<j , t1:n) (see Equation 5) are
+encoder-decoders such as LSTMs (Hochreiter and
+Schmidhuber, 1997) and Transformers (Vaswani
+et al., 2017). The output of our model corresponds
+to positions in the input sequence, so our architec-
+ture is closely related to Pointer Networks (Vinyals
+et al., 2015).
+Figure 3 depicts our model. An encoder g com-
+putes a latent representation h1:n∈Rn×|h| of the
+tokens from their embeddings: h1:n=g(e(t1:n)).
+A decoder f then generates the hidden state
+qj=f(q<j , ā<j , h1:n) which is used to compute a
+query vector that locates each phrase of a tuple
+(r̄j , ōj , ūj) at each step. āj=[r̄j , ōj , ūj ] and they
+8202
+open the app
+Transformer Encoder
+EOS
+…
+drawer . navigate to settings …
+Span Encoding
+Instruction
+Encoder
+START
+Transformer Decoder
+…
+…
+Span Query 
+Decoder Hidden
+Span Input
+Decoder
+⌀
+⌀
+⌀
+⌀
+⌀⌀
+…
+r
+jq
+o
+jq
+u
+jq
+b:dh
+it
+jq
+Figure 3: The Phrase Tuple Extraction model encodes the instruction’s token sequence and then outputs a tuple
+sequence by querying into all possible spans of the encoded sequence. Each tuple contains the span positions of
+three phrases in the instruction that describe the action’s operation, object and optional arguments, respectively, at
+each step. ∅ indicates the phrase is missing in the instruction and is represented by a special span encoding.
+are assumed conditionally independent given pre-
+viously extracted phrase tuples and the instruction,
+so p(āj |ā<j , t1:n)=
+∏
+ȳ∈{r̄,ō,ū} p(ȳj |ā<j , t1:n).
+Note that ȳj ∈ {r̄j , ōj , ūj} denotes a specific
+span for y ∈ {r, o, u} in the action tuple at step j.
+We therefore rewrite ȳj as yb:dj to explicitly indicate
+that it corresponds to the span for r, o or u, starting
+at the bth position and ending at the dth position in
+the instruction, 1≤b<d≤n. We now parameterize
+the conditional probability as:
+p(yb:dj |ā<j , t1:n) = softmax(α(q
+y
+j , h
+b:d))
+y ∈ {r, o, u}
+(8)
+As shown in Figure 3, qyj indicates task-specific
+query vectors for y∈{r, o, u}. They are computed
+as qyj=φ(qj , θy)Wy, a multi-layer perceptron fol-
+lowed by a linear transformation. θy and Wy are
+trainable parameters. We use separate parameters
+for each of r, o and u. Wy ∈ R|φy |×|h| where |φy|
+is the output dimension of the multi-layer percep-
+tron. The alignment function α(·) scores how a
+query vector qyj matches a span whose vector rep-
+resentation hb:d is computed from encodings hb:d.
+Span Representation. There are a quadratic
+number of possible spans given a token sequence
+(Lee et al., 2017), so it is important to design
+a fixed-length representation hb:d of a variable-
+length token span that can be quickly computed.
+Beginning-Inside-Outside (BIO) (Ramshaw and
+Marcus, 1995)–commonly used to indicate spans
+in tasks such as named entity recognition–marks
+whether each token is beginning, inside, or outside
+a span. However, BIO is not ideal for our task be-
+cause subsequences for describing different actions
+can overlap, e.g., in click X and Y, click participates
+in both actions click X and click Y. In our exper-
+iments we consider several recent, more flexible
+span representations (Lee et al., 2016, 2017; Li
+et al., 2019) and show their impact in Section 5.2.
+With fixed-length span representations, we can
+use common alignment techniques in neural net-
+works (Bahdanau et al., 2014; Luong et al., 2015).
+We use the dot product between the query vector
+and the span representation: α(qyj , h
+b:d)=qyj · hb:d
+At each step of decoding, we feed the previously
+decoded phrase tuples, ā<j into the decoder. We
+can use the concatenation of the vector represen-
+tations of the three elements in a phrase tuple or
+the sum their vector representations as the input
+for each decoding step. The entire phrase tuple
+extraction model is trained by minimizing the soft-
+max cross entropy loss between the predicted and
+ground-truth spans of a sequence of phrase tuples.
+4.2 Grounding Model
+Having computed the sequence of tuples that best
+describe each action, we connect them to exe-
+cutable actions based on the screen at each step
+with our grounding model (Fig. 4). In step-by-
+step instructions, each part of an action is often
+clearly stated. Thus, we assume the probabilities
+of the operation rj , object oj , and argument uj are
+8203
+open
+UI 
+Objects
+app drawer 
+Transformer Encoder
+…
+…
+object
+[ obj4 ]
+operation
+[ CLICK ]
+obj1 obj2obj3 obj4obj5 obj45
+⌀
+argument
+[ NONE ]
+navigate to settings
+Transformer Encoder
+…
+object
+[ obj3 ]
+operation
+[ CLICK ]
+⌀
+argument
+[ NONE ]
+Object 
+Embedding
+Screen 
+Encoder
+Object 
+Encoding
+Grounded 
+Actions
+…
+EOS
+object
+[ NONE ]
+operation
+[ STOP ]
+⌀
+argument
+[ NONE ]
+⌀
+Initial Screen
+Transformer Encoder
+…
+User 
+Interface 
+Screen
+…
+obj1 obj2obj3 obj4obj5 obj9
+Screen 2
+…
+obj1 obj2obj3 obj4obj5 obj20
+Final Screen
+Extracted 
+Phrase 
+Tuples 
+Figure 4: The Grounding model grounds each phrase tuple extracted by the Phrase Extraction model as an operation
+type, a screen-specific object ID, and an argument if present, based on a contextual representation of UI objects for
+the given screen. A grounded action tuple can be automatically executed.
+independent given their description and the screen.
+p(aj |âj , sj) = p([rj , oj , uj ]|[r̂j , ôj , ûj ], sj)
+= p(rj |r̂j , sj)p(oj |ôj , sj)p(uj |ûj , sj)
+= p(rj |r̂j)p(oj |ôj , sj)
+(9)
+We simplify with two assumptions: (1) an opera-
+tion is often fully described by its instruction with-
+out relying on the screen information and (2) in mo-
+bile interaction tasks, an argument is only present
+for the Text operation, so uj=ûj . We parameter-
+ize p(rj |r̂j) as a feedforward neural network:
+p(rj |r̂j) = softmax(φ(r̂
+′
+j , θr)Wr) (10)
+φ(·) is a multi-layer perceptron with trainable pa-
+rameters θr. W r∈R|φr|×|r| is also trainable, where
+|φr| is the output dimension of the φ(·, θr) and
+|r| is the vocabulary size of the operations. φ(·)
+takes the sum of the embedding vectors of each
+token in the operation description r̂j as the input:
+r̂
+′
+j=
+∑d
+k=b e(tk) where b and d are the start and
+end positions of r̂j in the instruction.
+Determining oj is to select a UI object from a
+variable-number of objects on the screen, cj,k ∈ sj
+where 1≤k≤|sj |, based on the given object descrip-
+tion, ôj . We parameterize the conditional probabil-
+ity as a deep neural network with a softmax output
+layer taking logits from an alignment function:
+p(oj |ôj , sj) = p(oj = cj,k|ôj , cj,1:|sj |, λj)
+= softmax(α(ô
+′
+j , c
+′
+j,k))
+(11)
+The alignment function α(·) scores how the ob-
+ject description vector ô
+′
+j matches the latent repre-
+sentation of each UI object, c
+′
+j,k. This can be as
+simple as the dot product of the two vectors. The la-
+tent representation ô
+′
+j is acquired with a multi-layer
+perceptron followed by a linear projection:
+ô
+′
+j = φ(
+d∑
+k=b
+e(tk), θo)Wo (12)
+b and d are the start and end index of the object
+description ôj . θo and Wo are trainable parame-
+ters with Wo∈R|φo|×|o|, where |φo| is the output
+dimension of φ(·, θo) and |o| is the dimension of
+the latent representation of the object description.
+Contextual Representation of UI Objects. To
+compute latent representations of each candidate
+object, c
+′
+j,k, we use both the object’s properties
+and its context, i.e., the structural relationship with
+other objects on the screen. There are different
+ways for encoding a variable-sized collection of
+items that are structurally related to each other,
+including Graph Convolutional Networks (GCN)
+(Niepert et al., 2016) and Transformers (Vaswani
+et al., 2017). GCNs use an adjacency matrix pre-
+determined by the UI structure to regulate how the
+latent representation of an object should be affected
+by its neighbors. Transformers allow each object
+to carry its own positional encoding, and the rela-
+tionship between objects can be learned instead.
+The input to the Transformer encoder is a combi-
+nation of the content embedding and the positional
+encoding of each object. The content properties
+of an object include its name and type. We com-
+pute the content embedding of by concatenating the
+name embedding, which is the average embedding
+of the bag of tokens in the object name, and the
+8204
+type embedding. The positional properties of an
+object include both its spatial position and struc-
+tural position. The spatial positions include the
+top, left, right and bottom screen coordinates of
+the object. We treat each of these coordinates as a
+discrete value and represent it via an embedding.
+Such a feature representation for coordinates was
+used in ImageTransformer to represent pixel posi-
+tions in an image (Parmar et al., 2018). The spatial
+embedding of the object is the sum of these four
+coordinate embeddings. To encode structural infor-
+mation, we use the index positions of the object in
+the preorder and the postorder traversal of the view
+hierarchy tree, and represent these index positions
+as embeddings in a similar way as representing co-
+ordinates. The content embedding is then summed
+with positional encodings to form the embedding of
+each object. We then feed these object embeddings
+into a Transformer encoder model to compute the
+latent representation of each object, c
+′
+j,k.
+The grounding model is trained by minimizing
+the cross entropy loss between the predicted and
+ground-truth object and the loss between the pre-
+dicted and ground-truth operation.
+5 Experiments
+Our goal is to develop models and datasets to
+map multi-step instructions into automatically ex-
+ecutable actions given the screen information. As
+such, we use PIXELHELP’s paired natural instruc-
+tions and action-screen sequences solely for testing.
+In addition, we investigate the model quality on
+phrase tuple extraction tasks, which is a crucial
+building block for the overall grounding quality4.
+5.1 Datasets and Metrics
+We use two metrics that measure how a predicted
+tuple sequence matches the ground-truth sequence.
+• Complete Match: The score is 1 if two se-
+quences have the same length and have the
+identical tuple [r̂j , ôj , ûj ] at each step, other-
+wise 0.
+• Partial Match: The number of steps of the pre-
+dicted sequence that match the ground-truth
+sequence divided by the length of the ground-
+truth sequence (ranging between 0 and 1).
+We train and validate using ANDROIDHOWTO
+and RICOSCA, and evaluate on PIXELHELP. Dur-
+ing training, single-step synthetic command-action
+4Our model code is released at https : / / github .
+com / google-research / google-research /
+tree/master/seq2act.
+Span Rep. hb:d Partial Complete
+SumPooling
+∑d
+k=b hk 92.80 85.56
+StartEnd [hb;hd] 91.94 84.56
+[hb;hd, ê
+b:d, φ(d− b)] 91.11 84.33
+Table 1: ANDROIDHOWTO phrase tuple extraction
+test results using different span representations hb:d in
+(8). êb:d=
+∑d
+k=b w(hk)e(tk), where w(·) is a learned
+weight function for each token embedding (Lee et al.,
+2017). See the pseudocode for fast computation of
+these in the appendix.
+examples are dynamically stitched to form se-
+quence examples with a certain length distribution.
+To evaluate the full task, we use Complete and
+Partial Match on grounded action sequences a1:m
+where aj=[rj , oj , uj ].
+The token vocabulary size is 59K, which is com-
+piled from both the instruction corpus and the UI
+name corpus. There are 15 UI types, including 14
+common UI object types, and a type to catch all
+less common ones. The output vocabulary for op-
+erations include CLICK, TEXT, SWIPE and EOS.
+5.2 Model Configurations and Results
+Tuple Extraction. For the action-tuple extraction
+task, we use a 6-layer Transformer for both the
+encoder and the decoder. We evaluate three differ-
+ent span representations. Area Attention (Li et al.,
+2019) provides a parameter-free representation of
+each possible span (one-dimensional area), by sum-
+ming up the encoding of each token in the subse-
+quence: hb:d =
+∑d
+k=b hk. The representation of
+each span can be computed in constant time invari-
+ant to the length of the span, using a summed area
+table. Previous work concatenated the encoding of
+the start and end tokens as the span representation,
+hb:d = [hb;hd] (Lee et al., 2016) and a general-
+ized version of it (Lee et al., 2017). We evaluated
+these three options and implemented the represen-
+tation in Lee et al. (2017) using a summed area
+table similar to the approach in area attention for
+fast computation. For hyperparameter tuning and
+training details, refer to the appendix.
+Table 1 gives results on ANDROIDHOWTO’s test
+set. All the span representations perform well. En-
+codings of each token from a Transformer already
+capture sufficient information about the entire se-
+quence, so even only using the start and end en-
+codings yields strong results. Nonetheless, area
+attention provides a small boost over the others. As
+a new dataset, there is also considerable headroom
+remaining, particularly for complete match.
+8205
+Screen Encoder Partial Complete
+Heuristic 62.44 42.25
+Filter-1 GCN 76.44 52.41
+Distance GCN 82.50 59.36
+Transformer 89.21 70.59
+Table 2: PIXELHELP grounding accuracy. The differ-
+ences are statistically significant based on t-test over 5
+runs (p < 0.05).
+Grounding. For the grounding task, we com-
+pare Transformer-based screen encoder for gener-
+ating object representations hb:d with two baseline
+methods based on graph convolutional networks.
+The Heuristic baseline matches extracted phrases
+against object names directly using BLEU scores.
+Filter-1 GCN performs graph convolution without
+using adjacent nodes (objects), so the representa-
+tion of each object is computed only based on its
+own properties. Distance GCN uses the distance
+between objects in the view hierarchy, i.e., the num-
+ber of edges to traverse from one object to another
+following the tree structure. This contrasts with the
+traditional GCN definition based on adjacency, but
+is needed because UI objects are often leaves in the
+tree; as such, they are not adjacent to each other
+structurally but instead are connected through non-
+terminal (container) nodes. Both Filter-1 GCN and
+Distance GCN use the same number of parameters
+(see the appendix for details).
+To train the grounding model, we first train the
+Tuple Extraction sub-model on ANDROIDHOWTO
+and RICOSCA. For the latter, only language related
+features (commands and tuple positions in the com-
+mand) are used in this stage, so screen and action
+features are not involved. We then freeze the Tu-
+ple Extraction sub-model and train the grounding
+sub-model on RICOSCA using both the command
+and screen-action related features. The screen to-
+ken embeddings of the grounding sub-model share
+weights with the Tuple Extraction sub-model.
+Table 2 gives full task performance on PIXEL-
+HELP. The Transformer screen encoder achieves
+the best result with 70.59% accuracy on Complete
+Match and 89.21% on Partial Match, which sets
+a strong baseline result for this new dataset while
+leaving considerable headroom. The GCN-based
+methods perform poorly, which shows the impor-
+tance of contextual encodings of the information
+from other UI objects on the screen. Distance GCN
+does attempt to capture context for UI objects that
+are structurally close; however, we suspect that the
+distance information that is derived from the view
+hierarchy tree is noisy because UI developers can
+construct the structure differently for the same UI.5
+As a result, the strong bias introduced by the struc-
+ture distance does not always help. Nevertheless,
+these models still outperformed the heuristic base-
+line that achieved 62.44% for partial match and
+42.25% for complete match.
+5.3 Analysis
+To explore how the model grounds an instruction
+on a screen, we analyze the relationship between
+words in the instruction language that refer to spe-
+cific locations on the screen, and actual positions
+on the UI screen. We first extract the embedding
+weights from the trained phrase extraction model
+for words such as top, bottom, left and right. These
+words occur in object descriptions such as the check
+box at the top of the screen. We also extract the em-
+bedding weights of object screen positions, which
+are used to create object positional encoding. We
+then calculate the correlation between word embed-
+ding and screen position embedding using cosine
+similarity. Figure 5 visualizes the correlation as a
+heatmap, where brighter colors indicate higher cor-
+relation. The word top is strongly correlated with
+the top of the screen, but the trend for other location
+words is less clear. While left is strongly correlated
+with the left side of the screen, other regions on the
+screen also show high correlation. This is likely
+because left and right are not only used for refer-
+ring to absolute locations on the screen, but also for
+relative spatial relationships, such as the icon to the
+left of the button. For bottom, the strongest correla-
+tion does not occur at the very bottom of the screen
+because many UI objects in our dataset do not fall
+in that region. The region is often reserved for sys-
+tem actions and the on-screen keyboard, which are
+not covered in our dataset.
+The phrase extraction model passes phrase tuples
+to the grounding model. When phrase extraction
+is incorrect, it can be difficult for the grounding
+model to predict a correct action. One way to miti-
+gate such cascading errors is using the hidden state
+of the phrase decoding model at each step, qj . In-
+tuitively, qj is computed with the access to the
+encoding of each token in the instruction via the
+Transformer encoder-decoder attention, which can
+5While it is possible to directly use screen visual data for
+grounding, detecting UI objects from raw pixels is nontrivial.
+It would be ideal to use both structural and visual data.
+8206
+Figure 5: Correlation between location-related words
+in instructions and object screen position embedding.
+potentially be a more robust span representation.
+However, in our early exploration, we found that
+grounding with qj performs stunningly well for
+grounding RICOSCA validation examples, but per-
+forms poorly on PIXELHELP. The learned hidden
+state likely captures characteristics in the synthetic
+instructions and action sequences that do not mani-
+fest in PIXELHELP. As such, using the hidden state
+to ground remains a challenge when learning from
+unpaired instruction-action data.
+The phrase model failed to extract correct steps
+for 14 tasks in PIXELHELP. In particular, it re-
+sulted in extra steps for 11 tasks and extracted in-
+correct steps for 3 tasks, but did not skip steps for
+any tasks. These errors could be caused by differ-
+ent language styles manifested by the three datasets.
+Synthesized commands in RICOSCA tend to be
+brief. Instructions in ANDROIDHOWTO seem to
+give more contextual description and involve di-
+verse language styles, while PIXELHELP often has
+a more consistent language style and gives concise
+description for each step.
+6 Related Work
+Previous work (Branavan et al., 2009, 2010; Liu
+et al., 2018; Gur et al., 2019) investigated ap-
+proaches for grounding natural language on desk-
+top or web interfaces. Manuvinakurike et al. (2018)
+contributed a dataset for mapping natural language
+instructions to actionable image editing commands
+in Adobe Photoshop. Our work focuses on a new
+domain of grounding natural language instructions
+into executable actions on mobile user interfaces.
+This requires addressing modeling challenges due
+to the lack of paired natural language and action
+data, which we supply by harvesting rich instruc-
+tion data from the web and synthesizing UI com-
+mands based on a large scale Android corpus.
+Our work is related to semantic parsing, particu-
+larly efforts for generating executable outputs such
+as SQL queries (Suhr et al., 2018). It is also broadly
+related to language grounding in the human-robot
+interaction literature where human dialog results in
+robot actions (Khayrallah et al., 2015).
+Our task setting is closely related to work on
+language-conditioned navigation, where an agent
+executes an instruction as a sequence of movements
+(Chen and Mooney, 2011; Mei et al., 2016; Misra
+et al., 2017; Anderson et al., 2018; Chen et al.,
+2019). Operating user interfaces is similar to nav-
+igating the physical world in many ways. A mo-
+bile platform consists of millions of apps that each
+is implemented by different developers indepen-
+dently. Though platforms such as Android strive to
+achieve interoperability (e.g., using Intent or AIDL
+mechanisms), apps are more often than not built by
+convention and do not expose programmatic ways
+for communication. As such, each app is opaque to
+the outside world and the only way to manipulate it
+is through its GUIs. These hurdles while working
+with a vast array of existing apps are like physi-
+cal obstacles that cannot be ignored and must be
+negotiated contextually in their given environment.
+7 Conclusion
+Our work provides an important first step on the
+challenging problem of grounding natural language
+instructions to mobile UI actions. Our decomposi-
+tion of the problem means that progress on either
+can improve full task performance. For example,
+action span extraction is related to both semantic
+role labeling (He et al., 2018) and extraction of
+multiple facts from text (Jiang et al., 2019) and
+could benefit from innovations in span identifica-
+tion and multitask learning. Reinforcement learn-
+ing that has been applied in previous grounding
+work may help improve out-of-sample prediction
+for grounding in UIs and improve direct ground-
+ing from hidden state representations. Lastly, our
+work provides a technical foundation for investi-
+gating user experiences in language-based human
+computer interaction.
+Acknowledgements
+We would like to thank our anonymous reviewers
+for their insightful comments that improved the
+paper. Many thanks to the Google Data Compute
+team, especially Ashwin Kakarla and Muqthar Mo-
+hammad for their help with the annotations, and
+Song Wang, Justin Cui and Christina Ou for their
+help on early data preprocessing.
+8207
+References
+Peter Anderson, Qi Wu, Damien Teney, Jake Bruce,
+Mark Johnson, Niko Sünderhauf, Ian Reid, Stephen
+Gould, and Anton van den Hengel. 2018. Vision-
+and-language navigation: Interpreting visually-
+grounded navigation instructions in real environ-
+ments. In Proceedings of the IEEE Conference on
+Computer Vision and Pattern Recognition (CVPR).
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua
+Bengio. 2014. Neural machine translation by
+jointly learning to align and translate. CoRR,
+abs/1409.0473.
+S. R. K. Branavan, Harr Chen, Luke S. Zettlemoyer,
+and Regina Barzilay. 2009. Reinforcement learn-
+ing for mapping instructions to actions. In Pro-
+ceedings of the Joint Conference of the 47th Annual
+Meeting of the ACL and the 4th International Joint
+Conference on Natural Language Processing of the
+AFNLP: Volume 1 - Volume 1, ACL ’09, pages 82–
+90, Stroudsburg, PA, USA. Association for Compu-
+tational Linguistics.
+S.R.K. Branavan, Luke Zettlemoyer, and Regina Barzi-
+lay. 2010. Reading between the lines: Learning to
+map high-level instructions to commands. In Pro-
+ceedings of the 48th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 1268–
+1277, Uppsala, Sweden. Association for Computa-
+tional Linguistics.
+David L. Chen and Raymond J. Mooney. 2011. Learn-
+ing to interpret natural language navigation instruc-
+tions from observations. In Proceedings of the
+Twenty-Fifth AAAI Conference on Artificial Intelli-
+gence, AAAI’11, pages 859–865. AAAI Press.
+Howard Chen, Alane Suhr, Dipendra Misra, and Yoav
+Artzi. 2019. Touchdown: Natural language naviga-
+tion and spatial reasoning in visual street environ-
+ments. In Conference on Computer Vision and Pat-
+tern Recognition.
+Biplab Deka, Zifeng Huang, Chad Franzen, Joshua Hi-
+bschman, Daniel Afergan, Yang Li, Jeffrey Nichols,
+and Ranjitha Kumar. 2017. Rico: A mobile app
+dataset for building data-driven design applications.
+In Proceedings of the 30th Annual Symposium on
+User Interface Software and Technology, UIST ’17.
+Izzeddin Gur, Ulrich Rueckert, Aleksandra Faust, and
+Dilek Hakkani-Tur. 2019. Learning to navigate the
+web. In International Conference on Learning Rep-
+resentations.
+Luheng He, Kenton Lee, Omer Levy, and Luke Zettle-
+moyer. 2018. Jointly predicting predicates and argu-
+ments in neural semantic role labeling. In Proceed-
+ings of the 56th Annual Meeting of the Association
+for Computational Linguistics (Volume 2: Short Pa-
+pers), pages 364–369, Melbourne, Australia. Asso-
+ciation for Computational Linguistics.
+Sepp Hochreiter and Jürgen Schmidhuber. 1997. Long
+short-term memory. Neural Comput., 9(8):1735–
+1780.
+Tianwen Jiang, Tong Zhao, Bing Qin, Ting Liu, Nitesh
+Chawla, and Meng Jiang. 2019. Multi-input multi-
+output sequence labeling for joint extraction of fact
+and condition tuples from scientific text. In Proceed-
+ings of the 2019 Conference on Empirical Methods
+in Natural Language Processing and the 9th Interna-
+tional Joint Conference on Natural Language Pro-
+cessing (EMNLP-IJCNLP), pages 302–312, Hong
+Kong, China. Association for Computational Lin-
+guistics.
+Huda Khayrallah, Sean Trott, and Jerome Feldman.
+2015. Natural language for human robot interaction.
+Kenton Lee, Luheng He, Mike Lewis, and Luke Zettle-
+moyer. 2017. End-to-end neural coreference reso-
+lution. In Proceedings of the 2017 Conference on
+Empirical Methods in Natural Language Processing,
+pages 188–197, Copenhagen, Denmark. Association
+for Computational Linguistics.
+Kenton Lee, Tom Kwiatkowski, Ankur P. Parikh, and
+Dipanjan Das. 2016. Learning recurrent span repre-
+sentations for extractive question answering. CoRR,
+abs/1611.01436.
+Yang Li, Lukasz Kaiser, Samy Bengio, and Si Si.
+2019. Area attention. In Proceedings of the 36th
+International Conference on Machine Learning, vol-
+ume 97 of Proceedings of Machine Learning Re-
+search, pages 3846–3855, Long Beach, California,
+USA. PMLR.
+E. Z. Liu, K. Guu, P. Pasupat, T. Shi, and P. Liang.
+2018. Reinforcement learning on web interfaces us-
+ing workflow-guided exploration. In International
+Conference on Learning Representations (ICLR).
+Thang Luong, Hieu Pham, and Christopher D. Man-
+ning. 2015. Effective approaches to attention-based
+neural machine translation. In Proceedings of the
+2015 Conference on Empirical Methods in Natu-
+ral Language Processing, pages 1412–1421, Lis-
+bon, Portugal. Association for Computational Lin-
+guistics.
+Ramesh Manuvinakurike, Jacqueline Brixey, Trung
+Bui, Walter Chang, Doo Soon Kim, Ron Artstein,
+and Kallirroi Georgila. 2018. Edit me: A corpus
+and a framework for understanding natural language
+image editing. In Proceedings of the Eleventh In-
+ternational Conference on Language Resources and
+Evaluation (LREC-2018), Miyazaki, Japan. Euro-
+pean Languages Resources Association (ELRA).
+Hongyuan Mei, Mohit Bansal, and Matthew R. Wal-
+ter. 2016. Listen, attend, and walk: Neural map-
+ping of navigational instructions to action sequences.
+In Proceedings of the Thirtieth AAAI Conference on
+Artificial Intelligence, AAAI’16, pages 2772–2778.
+AAAI Press.
+8208
+Dipendra Misra, John Langford, and Yoav Artzi. 2017.
+Mapping instructions and visual observations to ac-
+tions with reinforcement learning. In Proceedings
+of the Conference on Empirical Methods in Natural
+Language Processing, pages 1004–1015.
+Mathias Niepert, Mohamed Ahmed, and Konstantin
+Kutzkov. 2016. Learning convolutional neural net-
+works for graphs. In Proceedings of The 33rd In-
+ternational Conference on Machine Learning, vol-
+ume 48 of Proceedings of Machine Learning Re-
+search, pages 2014–2023, New York, New York,
+USA. PMLR.
+Niki Parmar, Ashish Vaswani, Jakob Uszkoreit, Lukasz
+Kaiser, Noam Shazeer, Alexander Ku, and Dustin
+Tran. 2018. Image transformer. In Proceed-
+ings of the 35th International Conference on Ma-
+chine Learning, volume 80 of Proceedings of Ma-
+chine Learning Research, pages 4055–4064, Stock-
+holmsmässan, Stockholm Sweden. PMLR.
+Lance Ramshaw and Mitch Marcus. 1995. Text chunk-
+ing using transformation-based learning. In Third
+Workshop on Very Large Corpora.
+Zhanna Sarsenbayeva. 2018. Situational impairments
+during mobile interaction. In Proceedings of the
+ACM on Interactive, Mobile, Wearable and Ubiqui-
+tous Technologies, pages 498–503.
+Alane Suhr, Srinivasan Iyer, and Yoav Artzi. 2018.
+Learning to map context-dependent sentences to ex-
+ecutable formal queries. In Proceedings of the 2018
+Conference of the North American Chapter of the
+Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long Papers),
+pages 2238–2249, New Orleans, Louisiana. Associ-
+ation for Computational Linguistics.
+Richard Szeliski. 2010. Computer Vision: Algorithms
+and Applications, 1st edition. Springer-Verlag,
+Berlin, Heidelberg.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. CoRR, abs/1706.03762.
+Oriol Vinyals, Meire Fortunato, and Navdeep Jaitly.
+2015. Pointer networks. In C. Cortes, N. D.
+Lawrence, D. D. Lee, M. Sugiyama, and R. Gar-
+nett, editors, Advances in Neural Information Pro-
+cessing Systems 28, pages 2692–2700. Curran Asso-
+ciates, Inc.
+A Data
+We present the additional details and analysis of
+the datasets. To label action phrase spans for the
+ANDROIDHOWTO dataset, 21 annotators (9 males
+and 12 females, 23 to 28 years old) were employed
+as contractors. They were paid hourly wages that
+are competitive for their locale. They have standard
+rights as contractors. They were native English
+speakers, and rated themselves 4 out of 5 regarding
+their familiarity with Android (1: not familiar and
+5: very familiar).
+Each annotator is presented a web interface, de-
+picted in Figure 6. The instruction to be labeled is
+shown on the left of the interface. From the instruc-
+tion, the annotator is asked to extract a sequence of
+action phrase tuples on the right, providing one tu-
+ple per row. Before a labeling session, an annotator
+is asked to go through the annotation guidelines,
+which are also accessible throughout the session.
+To label each tuple, the annotator first indicates
+the type of operation (Action Type) the step is about
+by selecting from Click, Swipe, Input and
+Others (the catch-all category). The annotator
+then uses a mouse to select the phrase in the instruc-
+tion for “Action Verb” (i.e., operation description)
+and for “object description”. A selected phrase
+span is automatically shown in the corresponding
+box and the span positions in the instruction are
+recorded. If the step involves an additional argu-
+ment, the annotator clicks on “Content Input” and
+then marks a phrase span in the instruction (see the
+second row). Once finished with creating a tuple,
+the annotator moves onto the next tuple by clicking
+the “+” button on the far right of the interface along
+the row, which inserts an empty tuple after the row.
+The annotator can delete a tuple (row) by clicking
+the “-” button on the row. Finally, the annotator
+clicks on the “Submit” button at the bottom of the
+screen to finish a session.
+The lengths of the instructions range from 19 to
+85 tokens, with median of 59, and they describe
+a sequence of actions from 1 to 19 steps, with a
+median of 5. Although the description for oper-
+ations tend to be short (most of them are one to
+two words), the description for objects can vary
+dramatically in length, ranging from 1 to 19. The
+large range of description span lengths requires an
+efficient algorithm to compute its representation.
+B Computing Span Representations
+We evaluated three types of span representations.
+Here we give details on how each representation is
+computed. For sum pooling, we use the implemen-
+tation of area attention (Li et al., 2019) that allows
+constant time computation of the representation
+of each span by using summed area tables. The
+TensorFlow implementation of the representation
+8209
+Figure 6: The web interface for annotators to label action phrase spans in an ANDROIDHOWTO instruction.
+is available on Github6.
+Algorithm 1: Compute the Start-End Con-
+cat span representation for all spans in par-
+allel.
+Input: A tensor H in shape of [L,D] that
+represents a sequence of vector with
+length L and depth D.
+Output: representation of each span, U .
+1 Hyperparameter: max span width M .
+2 Init start & end tensor: S ← H , E ← H;
+3 for m = 1, · · · ,M − 1 do
+4 S
+′ ← H[: −m, :] ;
+5 E
+′ ← H[m :, :] ;
+6 S ← [S S′ ], concat on the 1st dim;
+7 E ← [E E′ ], concat on the 1st dim;
+8 U ← [S E], concat on the last dim;
+9 return U .
+Algorithm 1 gives the recipe for Start-End Con-
+cat (Lee et al., 2016) using Tensor operations. The
+advanced form (Lee et al., 2017) takes two other
+features: the weighted sum over all the token em-
+bedding vectors within each span and a span length
+feature. The span length feature is trivial to com-
+pute in a constant time. However, computing the
+weighted sum of each span can be time consuming
+if not carefully designed. We decompose the com-
+putation as a set of summation-based operations
+(see Algorithm 2 and 3) so as to use summed area
+tables (Szeliski, 2010), which was been used in Li
+et al. (2019) for constant time computation of span
+representations. These pseudocode definitions are
+designed based on Tensor operations, which are
+highly optimized and fast.
+6https : / / github . com / tensorflow /
+tensor2tensor/blob/master/tensor2tensor/
+layers/area_attention.py
+Algorithm 2: Compute the weighted em-
+bedding sum of each span in parallel, using
+ComputeSpanVectorSum defined in Algo-
+rithm 3.
+Input: Tensors H and E are the hidden and
+embedding vectors of a sequence of
+tokens respectively, in shape of
+[L,D] with length L and depth D.
+Output: weighted embedding sum, X̂ .
+1 Hyperparameter: max span length M .
+2 Compute token weights A:
+A← exp(φ(H, θ)W ) where φ(·) is a
+multi-layer perceptron with trainable
+parameters θ, followed by a linear
+transformation W . A ∈ RL×1;
+3 E
+′ ← E ⊗A where ⊗ is element-wise
+multiplication. The last dim of A is
+broadcast;
+4 Ê ← ComputeSpanVectorSum(E′);
+5 Â← ComputeSpanVectorSum(A);
+6 X̂ ← Ê  Â where  is element-wise
+division. The last dim of Â is broadcast;
+7 return X̂ .
+Algorithm 3: ComputeSpanVectorSum.
+Input: A tensor G in shape of [L,D].
+Output: Sum of vectors of each span, U .
+1 Hyperparameter: max span length M .
+2 Compute integral image I by cumulative
+sum along the first dimension over G;
+3 I ← [0 I], padding zero to the left;
+4 for m = 0, · · · ,M − 1 do
+5 I1 ← I[m+ 1 :, :] ;
+6 I2 ← I[: −m− 1, :] ;
+7 Ī ← I1 − I2 ;
+8 U ← [U Ī], concat on the first dim;
+9 return U .
+8210
+C Details for Distance GCN
+Given the structural distance between two objects,
+based on the view hierarchy tree, we compute the
+strength of how these objects should affect each
+other by applying a Gaussian kernel to the distance,
+as shown the following (Equation 13).
+Adjacency(oi, oj) =
+1√
+2πσ2
+exp(−d(oi, oj)
+2
+2σ2
+)
+(13)
+where d(oi, oj) is the distance between object oi
+and oj , and σ is a constant. With this definition of
+soft adjacency, the rest of the computation follows
+the typical GCN (Niepert et al., 2016).
+D Hyperparameters & Training
+We tuned all the models on a number of hyper-
+parameters, including the token embedding depth,
+the hidden size and the number of hidden layers,
+the learning rate and schedule, and the dropout ra-
+tios. We ended up using 128 for the embedding
+and hidden size for all the models. Adding more
+dimensions does not seem to improve accuracy and
+slows down training.
+For the phrase tuple extraction task, we used 6
+hidden layers for Transformer encoder and decoder,
+with 8-head self and encoder-decoder attention, for
+all the model configurations. We used 10% dropout
+ratio for attention, layer preprocessing and relu
+dropout in Transformer. We followed the learning
+rate schedule detailed previously (Vaswani et al.,
+2017), with an increasing learning rate to 0.001 for
+the first 8K steps followed by an exponential decay.
+All the models were trained for 1 million steps with
+a batch size of 128 on a single Tesla V100 GPU,
+which took 28 to 30 hours.
+For the grounding task, Filter-1 GCN and Dis-
+tance GCN used 6 hidden layers with ReLU for
+nonlinear activation and 10% dropout ratio at each
+layer. Both GCN models use a smaller peak learn-
+ing rate of 0.0003. The Transformer screen encoder
+also uses 6 hidden layers but uses a much larger
+dropout ratio: ReLU dropout of 30%, attention
+dropout of 40%, and layer preprocessing dropout
+of 20%, with a peak learning rate of 0.001. All the
+grounding models were trained for 250K steps on
+the same hardware.
