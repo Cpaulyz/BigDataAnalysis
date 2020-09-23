@@ -13,3 +13,4 @@ Assignment2/src/main/resources/ACL2020/*.pdf
 ### pycharm ###
 **/venv/
 venv/
+__pycache__/
