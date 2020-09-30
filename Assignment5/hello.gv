@@ -1,0 +1,18 @@
+digraph G {
+	0 [label="dimension:2
+split:2.45?"]
+	1 [label="0 setosa"]
+	0 -> 1 [label=L]
+	2 [label="dimension:2
+split:4.75?"]
+	0 -> 2 [label=R]
+	3 [label="1 versicolor"]
+	2 -> 3 [label=L]
+	4 [label="dimension:3
+split:1.75?"]
+	2 -> 4 [label=R]
+	5 [label="1 versicolor"]
+	4 -> 5 [label=L]
+	6 [label="2 virginica"]
+	4 -> 6 [label=R]
+}
