@@ -90,28 +90,32 @@ def MSE(y, Y):
 
 
 ### Set the hyperparameters here ###
-epochs = 1000
+epochs =1000
 learning_rate = 0.001
 hidden_nodes = 10
 output_nodes = 1
 batch_size = 56
 
 input_nodes = train_features.shape[1]
+print(input_nodes)
 network = NeuralNetwork(input_nodes, hidden_nodes, output_nodes, learning_rate)
 losses = {'train': [], 'validation': []}
 
 for e in range(epochs):
-    # Go through a random batch of 128 records from the training data set
-    batch = np.random.choice(train_features.index, size=batch_size)
-    for record, target in zip(train_features.ix[batch].values,
-                              train_targets.ix[batch].values):
+#     # Go through a random batch of 128 records from the training data set
+    batch = np.random.choice(len(train_features), size=batch_size)
+    # print('batch',batch)
+    for record, target in zip(train_features[batch],
+                              train_targets[batch]):
         network.train(record, target)
+    #     print(record)
+    #     print(target)
 
     # Printing out the training progress
-    train_loss = MSE(network.predict(train_features), train_targets.values)
-    val_loss = MSE(network.predict(val_features), val_targets.values)
-    sys.stdout.write("\rProgress: " + str(100 * e / float(epochs))[:4] \
-                     + "% ... Training loss: " + str(train_loss)[:5] \
+    train_loss = MSE(network.predict(train_features), train_targets)
+    val_loss = MSE(network.predict(val_features), val_targets)
+    sys.stdout.write("\rProgress: " + str(100 * e / float(epochs))[:4]
+                     + "% ... Training loss: " + str(train_loss)[:5]
                      + " ... Validation loss: " + str(val_loss)[:5])
 
     losses['train'].append(train_loss)
@@ -126,6 +130,11 @@ fig, ax = plt.subplots(figsize=(8, 4))
 
 predictions = network.predict(test_features)
 ax.plot(predictions[0], label='Prediction')
-ax.plot((test_targets).values, label='Data')
+print(predictions)
+print(test_targets)
+ax.plot(test_targets, label='Data')
 ax.set_xlim(right=len(predictions))
 ax.legend()
+plt.show()
+
+# TODO：取整or四舍五入一下看看结果

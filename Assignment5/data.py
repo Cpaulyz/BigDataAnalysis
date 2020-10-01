@@ -13,7 +13,7 @@ feature_train, feature_test, target_train, target_test = train_test_split(iris_f
 # feature_train, feature_test, target_train, target_test = train_test_split(iris_feature, iris_target, test_size=0.33,
 #                                                                           random_state=10)
 
-print(iris_feature)
+# print(iris_feature)
 def show():
     t0 = [index for index in range(len(iris_target)) if iris_target[index] == 0]
     t1 = [index for index in range(len(iris_target)) if iris_target[index] == 1]
