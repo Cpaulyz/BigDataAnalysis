@@ -389,11 +389,9 @@ class NeuralNetwork(object):
 #### (2)修正隐藏层-输出层参数
 
 以权重`weights_hidden_to_output[0]`为例（为了表示方便记为w[0]），如果我们想知道他对总体误差产生了多少影响，可以对其求偏导。
-$$
-\frac{\partial E_{total}}{\partial w[0]}=
-\\ \frac{\partial E_{total}}{\partial final\_outputs[0]}*\frac{\partial final\_outputs[0]}{\partial final\_inputs[0] }*\frac{\partial final\_iutputs[0]}{\partial w[0] }=\\
-(final\_outputs[0] - targets)*1*(hidden\_outputs[0])
-$$
+
+![image-20201005011710881](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011737004-114002126.png)
+
 同理，可以计算出所有的weights_hidden_to_output
 
 代码实现如下
@@ -405,18 +403,16 @@ delta_weight_ho_out = np.dot(delta_output_in, hidden_outputs.T)
 self.weights_hidden_to_output -= (self.lr * delta_weight_ho_out)
 ```
 
-#### (2)修正输入层-隐藏层参数
+#### (3)修正输入层-隐藏层参数
 
 这里需要先知道中间使用的激活函数sigmoid函数的求导
 $$
 sigmoid'(f(x))=f'(x)f(x)(1-f(x))
 $$
 以权重`weights_input_to_hidden[0]`为例（为了表示方便记为w[0]），如果我们想知道他对总体误差产生了多少影响，可以对其求偏导。
-$$
-\frac{\partial E_{total}}{\partial w[0]}=
-\\ \frac{\partial E_{total}}{\partial final\_outputs[0]}*\frac{\partial final\_outputs[0]}{\partial final\_inputs[0] }*\frac{\partial final\_iutputs[0]}{\partial hidden\_out[0] }*\frac{\partial hidden\_out[0]}{\partial hidden\_in[0] }*\frac{\partial  hidden\_in[0]}{\partial w[0] }=\\
-(final\_outputs[0] - targets)*1*(weights\_hidden\_to\_output[0])*\\(hidden\_outputs[0] * (1 - hidden\_outputs[0]))*(inputs[0])
-$$
+
+![image-20201005011601200](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011737576-999358516.png)
+
 同理，可以计算出所有的weights_input_to_hidden
 
 代码实现如下
