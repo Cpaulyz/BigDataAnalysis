@@ -1,3 +1,5 @@
+﻿[TOC]
+
 # 数据集处理
 
 ## 数据获取
@@ -47,7 +49,7 @@ def show():
     plt.show()
 ```
 
-![image-20200930161247489](C:\Users\admin\AppData\Roaming\Typora\typora-user-images\image-20200930161247489.png)
+![image-20200930161247489](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011106215-143867446.png)
 
 # 方法1 DecisionTree
 
@@ -75,7 +77,7 @@ class Node:
 
 计算公式为
 
-![image-20200930162351311](C:\Users\admin\AppData\Roaming\Typora\typora-user-images\image-20200930162351311.png)
+![image-20200930162351311](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011104772-200036470.png)
 
 基尼值越小说明该数据集中不同类的数据越少
 
@@ -107,7 +109,7 @@ def get_gini(label):
 
 计算公式如下
 
-![image-20200930162520099](C:\Users\admin\AppData\Roaming\Typora\typora-user-images\image-20200930162520099.png)
+![image-20200930162520099](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011104460-1713131133.png)
 
 因为鸢尾花数据集的属性都是浮点数，为了**二分化**，我们需要寻找一个阈值，这里采用的方法是枚举所有的划分情况，因此需要做：
 
@@ -234,13 +236,11 @@ def build_tree(feature, label):
         return Node(None, None, True, None, None, label[0])
 ```
 
-## 可视化
+## 分类结果
 
 使用graphviz对训练出的决策树进行可视化
 
-![image-20200930172301085](C:\Users\admin\AppData\Roaming\Typora\typora-user-images\image-20200930172301085.png)
-
-## 分类结果
+![image-20200930172301085](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011104141-60661902.png)
 
 通过对测试集的预测来验证准确性
 
@@ -285,20 +285,275 @@ score(res, feature_test, target_test)
 
 经过验证，随机选取划分数据集的随机数种子（既按照2：1的训练集：测试集比例，随机划分），正确率都在90%以上，说明决策树方法能有效划分鸢尾花数据集
 
-# 方法2 SVM
+# 方法2 BPNN
 
-打算调库。。
+BPNN（Back Propagation Neural Network）的主要思想是通过神经网络**正向传播输出结果**，通过**反向传播**（Back Propagation）方式**传递误差**，并对网络中的参数进行优化，以训练出一个神经网络。
 
-# 方法3 BPNN
+这里直接通过构造一个BP神经网络，来实现对鸢尾花数据集分类例子，用代码来讲述对其的理解。
 
-算法的实现总共分为6步：
+## 网络搭建
 
-1. 初始化参数
-2. 前向传播
-3. 计算代价函数
-4. 反向传播
-5. 更新参数
-6. 模型评估
+构建一个如图所示的神经网络
+
+![image-20201003224748022](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011103543-1097817503.png)
+
+一些定义
+
+* 输入层：input
+* 隐藏层：hide
+* 输出层：ouput
+
+## 算法实现
+
+### 初始化参数
+
+类定义及初始化如下
+
+```python
+class NeuralNetwork(object):
+    def __init__(self, input_nodes, hidden_nodes, output_nodes, learning_rate):
+        """
+        :param input_nodes:  输入层节点个数
+        :param hidden_nodes:  隐藏层节点个数
+        :param output_nodes:  输出层节点个数
+        :param learning_rate:  学习率
+        """
+        self.input_nodes = input_nodes
+        self.hidden_nodes = hidden_nodes
+        self.output_nodes = output_nodes
+        self.weights_input_to_hidden = np.random.normal(0.0, self.hidden_nodes ** -0.5,
+                                                        (self.hidden_nodes, self.input_nodes))
+
+        self.weights_hidden_to_output = np.random.normal(0.0, self.output_nodes ** -0.5,
+                                                         (self.output_nodes, self.hidden_nodes))
+
+        self.lr = learning_rate  # 学习率
+        self.activation_function = self.sigmoid
+
+    def sigmoid(self, x):
+        return 1.0 / (1 + np.exp(-x))
+```
+
+选择sigmoid函数作为激活函数
+
+### 向前传播
+
+向前传播指的已知各个节点的参数，如何得到神经网络的输出。
+
+1. 输入层inputs
+
+2. 隐藏层输入：通过输入层x权重得到隐藏层输入
+
+	`hidden_inputs = np.dot(self.weights_input_to_hidden, inputs)`
+
+3. 隐藏层输出：通过隐藏层输入带入激活函数中获得
+
+	`hidden_outputs = self.activation_function(hidden_inputs)`
+
+4. 结果层输入：通过隐藏层x权重得到结果层输入
+
+	`final_inputs = np.dot(self.weights_hidden_to_output, hidden_outputs)`
+
+5. 结果层输出：尽管很多书上在这里会再使用一次激活函数，但因为期望的输出结果为分类target(0、1、2)，而sigmoid函数的取值为(0,1)，所以这里我们选择不再使用一次激活函数。结果证明这样处理下，仍然能够保持较好的准确率。
+
+	`final_outputs = final_inputs`
+
+完整代码
+
+```python
+    def train(self, inputs_list, targets_list):
+        # 正向传播
+        inputs = np.array(inputs_list, ndmin=2).T
+        targets = np.array(targets_list, ndmin=2).T
+
+        hidden_inputs = np.dot(self.weights_input_to_hidden, inputs)
+        hidden_outputs = self.activation_function(hidden_inputs)
+
+        final_inputs = np.dot(self.weights_hidden_to_output, hidden_outputs)
+        final_outputs = final_inputs  # 因为的取值为0、1、2，所以这里不再用激活函数了，否则结果会被限制在0到1
+        # 未完，见下
+```
+
+### 反向传播
+
+反向传播主要是使用了梯度下降的方法来对参数进行修正，以提高拟合效果
+
+#### (1)计算总误差
+
+计算总的误差为：
+
+![image-20201003230616991](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011103097-269381363.png)
+
+我们反向传播的目的就是对参数进行修正，使得E<sub>total</sub>达到最小。
+
+#### (2)修正隐藏层-输出层参数
+
+以权重`weights_hidden_to_output[0]`为例（为了表示方便记为w[0]），如果我们想知道他对总体误差产生了多少影响，可以对其求偏导。
+$$
+\frac{\partial E_{total}}{\partial w[0]}=
+\\ \frac{\partial E_{total}}{\partial final\_outputs[0]}*\frac{\partial final\_outputs[0]}{\partial final\_inputs[0] }*\frac{\partial final\_iutputs[0]}{\partial w[0] }=\\
+(final\_outputs[0] - targets)*1*(hidden\_outputs[0])
+$$
+同理，可以计算出所有的weights_hidden_to_output
+
+代码实现如下
+
+```python
+delta_output_out = final_outputs - targets
+delta_output_in = delta_output_out
+delta_weight_ho_out = np.dot(delta_output_in, hidden_outputs.T)
+self.weights_hidden_to_output -= (self.lr * delta_weight_ho_out)
+```
+
+#### (2)修正输入层-隐藏层参数
+
+这里需要先知道中间使用的激活函数sigmoid函数的求导
+$$
+sigmoid'(f(x))=f'(x)f(x)(1-f(x))
+$$
+以权重`weights_input_to_hidden[0]`为例（为了表示方便记为w[0]），如果我们想知道他对总体误差产生了多少影响，可以对其求偏导。
+$$
+\frac{\partial E_{total}}{\partial w[0]}=
+\\ \frac{\partial E_{total}}{\partial final\_outputs[0]}*\frac{\partial final\_outputs[0]}{\partial final\_inputs[0] }*\frac{\partial final\_iutputs[0]}{\partial hidden\_out[0] }*\frac{\partial hidden\_out[0]}{\partial hidden\_in[0] }*\frac{\partial  hidden\_in[0]}{\partial w[0] }=\\
+(final\_outputs[0] - targets)*1*(weights\_hidden\_to\_output[0])*\\(hidden\_outputs[0] * (1 - hidden\_outputs[0]))*(inputs[0])
+$$
+同理，可以计算出所有的weights_input_to_hidden
+
+代码实现如下
+
+```python
+delta_hidden_out = np.dot(self.weights_hidden_to_output.T, delta_output_in)
+delta_hidden_in = delta_hidden_out * hidden_outputs * (1 - hidden_outputs)
+delta_wih = np.dot(delta_hidden_in, inputs.T)
+self.weights_input_to_hidden -= (self.lr * delta_wih)
+```
+
+> 关于正向传播、反向传播部分的参考
+>
+> https://www.cnblogs.com/charlotte77/p/5629865.html
+
+### 模型训练
+
+```python
+epochs = 1000  # 训练次数
+learning_rate = 0.001
+hidden_nodes = 10
+output_nodes = 1
+batch_size = 50
+input_nodes = train_features.shape[1]
+network = NeuralNetwork(input_nodes, hidden_nodes, output_nodes, learning_rate)
+
+for e in range(epochs):  # 进行epochs次训练
+    batch = np.random.choice(len(train_features), size=batch_size)  # 从训练集中随机挑选50个样本进行训练
+    for record, target in zip(train_features[batch],
+                              train_targets[batch]):
+        network.train(record, target)
+```
+
+## 分类结果
+
+1. 1000次训练下的损失函数图如下
+
+![image-20201003233152306](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011102720-1244399969.png)
+
+2. 训练集的分类正确率为 0.98
+	测试集的分类正确率为 0.96
+
+	![image-20201003233526013](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011102290-1331571000.png)
+
+说明BPNN方法能有效划分鸢尾花数据集
+
+# 方法3 SVM
+
+## 理解
+
+### SVM
+
+SVM是一种监督学习算法，主要思想是建立一个最优决策超平面，使得该平面两侧距平面最近的两类样本之间的距离最大化，从而对分类问题提供良好的泛化能力
+
+以下图为例，黄色和蓝色是两种决策超平面，而黄色平面两侧距平面最近的两类样本之间的距离较大，所以可以称黄色是最优决策超平面。
+
+而“支持向量”指训练集中的一些训练点，这些训练点最靠近决策面，是最难分类的数据点。比如图中画了虚线的四个点就是这种点。
+
+![image-20201005002937214](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011101665-1363206181.png)
+
+寻找到这类超平面后，我们假设超平面方程为
+$$
+W^TX+b=0
+$$
+X为输入向量，W为权值向量，b为偏置，则可根据以下两个标准分为两类
+$$
+W^TX+b>0
+$$
+
+$$
+W^TX+b<0
+$$
+
+### 核函数
+
+为了划
+
+分非线性数据，我们不能使用线性结果对其进行划分，如图，我们为了划分两类数据，没办法使用一条直线进行划分，而需要用曲线进行划分
+
+![image-20201005003847405](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011101113-1289088207.png)
+
+从高维的角度理解这个问题，原理是将数据映射到高维数据，在高维空间线性可分。
+
+比如我们做一个从二维到三维的映射之后，就可以使用一个平面来划分这两类数据
+
+![image-20201005003946483](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011100409-1437453139.png)
+
+这种将**原始空间**中的向量作为**输入向量**，并返回**特征空间**（转换后的数据空间,可能是高维）**中向量的点积**的函数称**为核函数**。
+
+一个来源网上的例子：
+
+![image-20201005004130499](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011059818-513166328.png)
+
+在下面的实现里，我们选用rbf作为核函数，径向基函数 (Radial Basis Function 简称 RBF)，就是某种沿径向对称的标量函数，最常用的是高斯核函数。
+
+高斯核本质是在衡量样本和样本之间的“相似度”，在一个刻画“相似度”的空间中，让同类样本更好的聚在一起，进而线性可分。
+
+![image-20201005004420957](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011059376-1851926701.png)
+
+
+
+- **1，使用一个非线性映射将数据变换到一个特征空间 F** 
+- **2，在特征空间使用线性学习器分类**
+
+## 实现
+
+使用Sklearn自带的SVM模型进行实现
+
+```python
+import matplotlib.pyplot as plt
+from sklearn import svm
+
+from data import feature_train, target_train, feature_test, target_test
+
+svm_classifier = svm.SVC(C=1.0, kernel='rbf', decision_function_shape='ovr', gamma=0.01)
+svm_classifier.fit(feature_train, target_train)
+
+print("训练集:", svm_classifier.score(feature_train, target_train))
+print("测试集:", svm_classifier.score(feature_test, target_test))
+target_test_predict = svm_classifier.predict(feature_test)
+comp = zip(target_test, target_test_predict)
+print(list(comp))
+
+plt.figure()
+plt.subplot(121)
+plt.scatter(feature_test[:, 0], feature_test[:, 1], c=target_test.reshape((-1)), edgecolors='k', s=50)
+plt.subplot(122)
+plt.scatter(feature_test[:, 0], feature_test[:, 1], c=target_test_predict.reshape((-1)), edgecolors='k', s=50)
+plt.show()
+```
+
+分类结果如下
+
+![image-20201005003501399](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011058789-49600793.png)
+
+训练集的准确率: 0.95
+测试集的准确率: 0.92
 
 # 方法4 KNN
 
@@ -400,6 +655,6 @@ class KNNClassifier:
 
 使用plt绘制分布图：
 
-![image-20200930173159188](C:\Users\admin\AppData\Roaming\Typora\typora-user-images\image-20200930173159188.png)
+![image-20200930173159188](https://img2020.cnblogs.com/blog/1958143/202010/1958143-20201005011057948-478622429.png)
 
 可以看出，KNN能够很好地对鸢尾花数据集进行分类

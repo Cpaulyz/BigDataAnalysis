@@ -1,6 +1,6 @@
-from PrintTree import createPlot
-from PrintTree2 import plot_model
-from data import feature_train, target_train, feature_test, target_test,iris_target_name
+from graphviz import Digraph
+
+from data import feature_train, target_train, feature_test, target_test, iris_target_name
 
 
 class Node:
@@ -165,7 +165,7 @@ def printtree(root: Node, indent='-', dict_tree={}, direct='L'):
     # 是否是叶节点
     if root.isLeaf:
         # print(root.species)
-        dict_tree = {direct: str(root.species)+' '+iris_target_name[root.species]}
+        dict_tree = {direct: str(root.species) + ' ' + iris_target_name[root.species]}
 
     else:
         left = printtree(root.left, indent=indent + "-", direct='L')
@@ -173,7 +173,7 @@ def printtree(root: Node, indent='-', dict_tree={}, direct='L'):
         right = printtree(root.right, indent=indent + "-", direct='R')
         right_copy = right.copy()
         left_copy.update(right_copy)
-        stri = 'dimension:'+str(root.dimension) + "\nsplit:" + str(root.threshold) + "?"
+        stri = 'dimension:' + str(root.dimension) + "\nsplit:" + str(root.threshold) + "?"
         if indent != '-':
             dict_tree = {direct: {stri: left_copy}}
         else:
@@ -181,10 +181,37 @@ def printtree(root: Node, indent='-', dict_tree={}, direct='L'):
     return dict_tree
 
 
+def plot_model(tree, name):
+    g = Digraph("G", filename=name, format='png', strict=False)
+    first_label = list(tree.keys())[0]
+    g.node("0", first_label)
+    _sub_plot(g, tree, "0")
+    g.view()
+
+
+root = "0"
+
+
+def _sub_plot(g, tree, inc):
+    global root
+
+    first_label = list(tree.keys())[0]
+    ts = tree[first_label]
+    for i in ts.keys():
+        if isinstance(tree[first_label][i], dict):
+            root = str(int(root) + 1)
+            g.node(root, list(tree[first_label][i].keys())[0])
+            g.edge(inc, root, str(i))
+            _sub_plot(g, tree[first_label][i], root)
+        else:
+            root = str(int(root) + 1)
+            g.node(root, tree[first_label][i])
+            g.edge(inc, root, str(i))
+
+
 res = build_tree(feature_train, target_train)
 score(res, feature_test, target_test)
 tree = printtree(res)
 plot_model(tree, "hello.gv")
-createPlot(tree)
 
 print(printtree(res))
