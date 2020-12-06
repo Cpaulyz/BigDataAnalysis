@@ -31,3 +31,18 @@
 ## Assignment5
 
 使用多种方法分类鸢尾花数据集
+
+## Assignment6
+
+推荐算法 MovieLens数据集
+
+* CF
+* Content-Based
+
+## Assignment8
+
+知识图谱补全
+
+* 使用FB15K-237数据集
+* 进行transE建模、链接预测
+
